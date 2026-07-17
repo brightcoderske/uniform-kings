@@ -1,0 +1,7 @@
+import 'dotenv/config';import mysql from 'mysql2/promise';import bcrypt from 'bcryptjs';import {readFile} from 'node:fs/promises';
+const cfg={host:process.env.DB_HOST||'127.0.0.1',port:+(process.env.DB_PORT||3306),user:process.env.DB_USER||'root',password:process.env.DB_PASSWORD||''},db=process.env.DB_NAME||'uniform_kings';
+const c=await mysql.createConnection(cfg);await c.query(`CREATE DATABASE IF NOT EXISTS \`${db.replaceAll('`','')}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);await c.query(`USE \`${db.replaceAll('`','')}\``);
+const sql=await readFile(new URL('../../sql/schema.sql',import.meta.url),'utf8');for(const s of sql.split(/;\s*(?:\r?\n|$)/).map(x=>x.trim()).filter(Boolean))await c.query(s);
+const [checkoutColumns]=await c.query("SHOW COLUMNS FROM checkout_methods LIKE 'is_default'");
+if(!checkoutColumns.length) await c.query("ALTER TABLE checkout_methods ADD COLUMN is_default BOOLEAN NOT NULL DEFAULT FALSE AFTER is_enabled");
+if(process.env.ADMIN_EMAIL&&process.env.ADMIN_PASSWORD){const h=await bcrypt.hash(process.env.ADMIN_PASSWORD,12);await c.execute(`INSERT INTO users(name,email,password_hash,role,status) VALUES(?,?,?,'super_admin','active') ON DUPLICATE KEY UPDATE name=VALUES(name),password_hash=VALUES(password_hash),role='super_admin',status='active'`,[process.env.ADMIN_NAME||'Administrator',process.env.ADMIN_EMAIL.toLowerCase(),h]);console.log(`Admin ready: ${process.env.ADMIN_EMAIL}`)}else console.log('Schema ready. Configure ADMIN_EMAIL and ADMIN_PASSWORD to create the first administrator.');await c.end();

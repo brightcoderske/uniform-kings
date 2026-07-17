@@ -1,0 +1,103 @@
+/* Keep the storefront clean and grown-up; gold remains an accent colour only. */
+html,
+body,
+main,
+.landing-categories,
+.landing-products,
+.auth-page {
+  background: #fff !important;
+}
+
+.storefront-card {
+  border-color: #dfe5ec !important;
+  border-radius: 14px !important;
+}
+
+.storefront-card .product-img,
+.storefront-card .add {
+  background: #f5f7fa !important;
+}
+
+.storefront-card .add {
+  border-color: #dce3eb;
+}
+
+.quick-account-menu {
+  border-color: #e0e6ed;
+}
+
+.quick-account-menu a:hover,
+.quick-account-menu button:hover {
+  background: #f3f6f9;
+}
+
+footer {
+  background: #071a3d !important;
+  color: #d0d8e7;
+}
+
+.admin-signout { color: #9b2c39 !important; font-size: 15px; padding: 8px !important; }
+.edit-product-images { display: flex; gap: 10px; flex-wrap: wrap; padding: 12px 0; }
+.edit-product-images img { width: 88px; height: 88px; object-fit: cover; border: 1px solid #dfe5ec; border-radius: 8px; }
+
+/* Login/reference-inspired compact card: calm, professional, site-coloured. */
+.auth-page {
+  min-height: calc(100vh - 122px) !important;
+  height: auto !important;
+  padding: 46px 20px;
+  display: grid !important;
+  place-content: center;
+  grid-template-columns: minmax(0, 420px) minmax(320px, 420px) !important;
+  background: linear-gradient(180deg, #0d2a5f 0 46%, #eaf0fb 46%) !important;
+}
+
+.auth-page > section,
+.auth-page > aside {
+  min-height: 475px;
+  box-sizing: border-box;
+}
+
+.auth-page > section {
+  border: 1px solid rgba(7, 26, 61, 0.18);
+  border-right: 0;
+  box-shadow: 0 24px 65px rgba(7, 26, 61, 0.2);
+}
+
+.auth-page > aside {
+  border: 1px solid rgba(7, 26, 61, 0.22);
+  border-left: 3px solid #c9972d;
+  box-shadow: 18px 24px 65px rgba(7, 26, 61, 0.16);
+}
+
+.auth-page .password-field,
+.auth-page .password-field input {
+  width: 100% !important;
+  box-sizing: border-box;
+}
+
+.auth-page > section {
+  width: auto !important;
+  margin: 0 !important;
+  padding: 42px !important;
+  background: #fff;
+  border-radius: 20px 0 0 20px;
+}
+
+.auth-page > aside {
+  display: grid !important;
+  padding: 42px;
+  background: #eef3fa !important;
+  color: #071a3d;
+  border-radius: 0 20px 20px 0;
+  place-content: center;
+}
+
+.auth-page aside img { width: 160px !important; height: 160px !important; box-shadow: none !important; }
+.auth-page aside h2 { font-size: 24px !important; color: #071a3d; }
+.landing-categories { display: none !important; }
+
+@media (max-width: 760px) {
+  .auth-page { display: block !important; min-height: calc(100vh - 62px) !important; padding: 18px 16px !important; background: #fff !important; align-content: normal !important; }
+  .auth-page > section { border-radius: 0; padding: 28px 0 !important; min-height: 0; }
+  .auth-page > aside { display: none !important; }
+}
