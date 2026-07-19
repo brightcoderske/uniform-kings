@@ -154,19 +154,18 @@ app.post("/api/payments/mpesa/initiate", auth, async (req, res, next) => {
     ok(res, { message:"M-Pesa prompt sent to the customer phone.", checkout_request_id:data.CheckoutRequestID });
   } catch (error) { next(error); }
 });
-app.get("/api/config", async (req, res) =>
-  ok(
-    res,
-    (await one(
-      `SELECT MAX(CASE WHEN setting_key='site_name' THEN setting_value END) site_name,MAX(CASE WHEN setting_key='whatsapp_number' THEN setting_value END) whatsapp_number,MAX(CASE WHEN setting_key='contact_phone' THEN setting_value END) contact_phone,MAX(CASE WHEN setting_key='contact_email' THEN setting_value END) contact_email FROM settings`,
-    )) || {},
-  ),
-);
+app.get("/api/config", async (req, res, next) => {
+  try {
+    const data = (await one(`SELECT MAX(CASE WHEN setting_key='site_name' THEN setting_value END) site_name,MAX(CASE WHEN setting_key='whatsapp_number' THEN setting_value END) whatsapp_number,MAX(CASE WHEN setting_key='contact_phone' THEN setting_value END) contact_phone,MAX(CASE WHEN setting_key='contact_email' THEN setting_value END) contact_email FROM settings`)) || {};
+    data.categories = await rows(`SELECT name,slug FROM categories WHERE is_active=1 ORDER BY sort_order,name LIMIT 6`);
+    ok(res, data);
+  } catch (e) { next(e); }
+});
 app.get("/api/catalog/home", async (req, res, next) => {
   try {
     const [products, categories, schools, heroImages] = await Promise.all([
       rows(
-        `SELECT p.*,i.image_path,(SELECT GROUP_CONCAT(image_path ORDER BY sort_order,id SEPARATOR '|') FROM product_images WHERE product_id=p.id) image_paths,c.name category_name,s.name school_name FROM products p LEFT JOIN product_images i ON i.id=(SELECT MIN(id) FROM product_images WHERE product_id=p.id) LEFT JOIN categories c ON c.id=p.category_id LEFT JOIN schools s ON s.id=p.school_id WHERE p.status='active' AND (p.is_featured=1 OR p.is_new=1) ORDER BY p.is_featured DESC,p.is_new DESC,p.updated_at DESC LIMIT 12`,
+        `SELECT p.*,i.image_path,(SELECT GROUP_CONCAT(image_path ORDER BY sort_order,id SEPARATOR '|') FROM product_images WHERE product_id=p.id) image_paths,c.name category_name,c.slug category_slug,s.name school_name FROM products p LEFT JOIN product_images i ON i.id=(SELECT MIN(id) FROM product_images WHERE product_id=p.id) JOIN categories c ON c.id=p.category_id AND c.is_active=1 LEFT JOIN schools s ON s.id=p.school_id WHERE p.status='active' ORDER BY c.sort_order,c.name,p.is_featured DESC,p.is_new DESC,p.updated_at DESC LIMIT 600`,
       ),
       rows(
         `SELECT c.* FROM categories c WHERE c.is_active=1 AND EXISTS(SELECT 1 FROM products p WHERE p.category_id=c.id AND p.status='active') ORDER BY c.sort_order,c.name LIMIT 12`,
@@ -174,7 +173,7 @@ app.get("/api/catalog/home", async (req, res, next) => {
       rows(
         `SELECT * FROM schools WHERE is_active=1 AND is_featured=1 ORDER BY name LIMIT 8`,
       ),
-      rows(`SELECT pi.image_path,p.slug,p.name FROM product_images pi JOIN products p ON p.id=pi.product_id WHERE p.status='active' ORDER BY p.is_featured DESC,p.updated_at DESC,pi.sort_order LIMIT 8`),
+      rows(`SELECT image_path,mobile_image_path,alt_text FROM hero_images WHERE is_active=1 ORDER BY sort_order,id LIMIT 8`),
     ]);
     ok(res, { products, categories, schools, heroImages });
   } catch (e) {
@@ -185,7 +184,8 @@ app.get("/api/products", async (req, res, next) => {
   try {
     const q = String(req.query.q || "").trim(),
       category = String(req.query.category || ""),
-      school = String(req.query.school || "");
+      school = String(req.query.school || ""),
+      offer = String(req.query.offer || "") === "1";
     let w = [`p.status='active'`],
       p = [];
     if (q) {
@@ -200,6 +200,7 @@ app.get("/api/products", async (req, res, next) => {
       w.push("s.slug=?");
       p.push(school);
     }
+    if (offer) w.push(`p.compare_price IS NOT NULL AND p.compare_price>p.price`);
     ok(
       res,
       await rows(
@@ -619,11 +620,37 @@ app.get("/api/admin/orders/:id/pdf", staff, async (req, res, next) => {
     doc.font("Helvetica").fontSize(thermal ? 7 : 10).text(order.order_number, { align: "center" }).text(new Date(order.created_at).toLocaleString("en-KE"), { align: "center" });
     doc.moveDown(.8).strokeColor(thermal ? "#d9dee7" : "#a56f5d").lineWidth(thermal ? 1 : 2).moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.width-doc.page.margins.right,doc.y).stroke().lineWidth(1).moveDown(.6);
     if (!thermal) { doc.font("Helvetica-Bold").fontSize(10).text("Billed to"); doc.font("Helvetica").text(order.customer_name); if(order.phone) doc.text(order.phone); if(order.email) doc.text(order.email); doc.moveDown(.6); }
-    doc.font("Helvetica-Bold").fontSize(thermal ? 7 : 10).text("ITEM", doc.page.margins.left, doc.y); if (!thermal) doc.text("QTY", doc.page.margins.left + width*.56, doc.y-10); doc.text("TOTAL", thermal ? doc.page.margins.left + width*.62 : doc.page.margins.left + width*.76, doc.y-10, { width: thermal ? width*.38 : width*.24, align:"right" }); doc.moveDown(.35);
-    for (const item of items) { doc.font("Helvetica-Bold").fontSize(thermal ? 7 : 10).text(item.product_name, { width: thermal ? width*.62 : width*.54 }); doc.font("Helvetica").fontSize(thermal ? 6 : 9).fillColor("#667085").text([item.size,item.colour].filter(Boolean).join(" / ") || "Standard"); doc.fillColor("#172033").fontSize(thermal ? 7 : 9).text(`${item.quantity} x KES ${Number(item.unit_price).toLocaleString("en-KE")}`, doc.page.margins.left, doc.y, { continued: true }).font("Helvetica-Bold").text(`KES ${Number(item.line_total).toLocaleString("en-KE")}`, { align:"right" }); doc.moveDown(.3); }
+    const left = doc.page.margins.left, columns = thermal
+      ? { item: width*.48, qty: width*.11, price: width*.19, total: width*.22 }
+      : { item: width*.53, qty: width*.10, price: width*.17, total: width*.20 };
+    const xQty = left + columns.item, xPrice = xQty + columns.qty, xTotal = xPrice + columns.price;
+    let tableY = doc.y;
+    doc.rect(left, tableY, width, thermal ? 17 : 23).fill(thermal ? "#23385d" : "#a56f5d");
+    doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(thermal ? 6 : 9)
+      .text("ITEM", left + 4, tableY + (thermal ? 5 : 7), { width:columns.item-6 })
+      .text("QTY", xQty, tableY + (thermal ? 5 : 7), { width:columns.qty, align:"center" })
+      .text("PRICE", xPrice, tableY + (thermal ? 5 : 7), { width:columns.price-3, align:"right" })
+      .text("TOTAL", xTotal, tableY + (thermal ? 5 : 7), { width:columns.total-4, align:"right" });
+    tableY += thermal ? 17 : 23;
+    items.forEach((item, index) => {
+      const variant = [item.size,item.colour].filter(Boolean).join(" / ") || "Standard";
+      const itemHeight = Math.max(thermal ? 30 : 34, doc.heightOfString(item.product_name, { width:columns.item-8 }) + (thermal ? 15 : 17));
+      doc.rect(left, tableY, width, itemHeight).fill(index % 2 ? (thermal ? "#edf1f6" : "#f3ebe3") : (thermal ? "#fafbfd" : "#fffaf5"));
+      doc.fillColor("#172033").font("Helvetica-Bold").fontSize(thermal ? 6.4 : 9).text(item.product_name, left+4, tableY+5, { width:columns.item-8 });
+      doc.fillColor("#667085").font("Helvetica").fontSize(thermal ? 5.5 : 7.5).text(variant, left+4, tableY+itemHeight-(thermal ? 11 : 13), { width:columns.item-8 });
+      doc.fillColor("#172033").font("Helvetica").fontSize(thermal ? 6 : 8.5).text(String(item.quantity), xQty, tableY+8, { width:columns.qty, align:"center" });
+      doc.text(Number(item.unit_price).toLocaleString("en-KE"), xPrice, tableY+8, { width:columns.price-3, align:"right" });
+      doc.font("Helvetica-Bold").text(Number(item.line_total).toLocaleString("en-KE"), xTotal, tableY+8, { width:columns.total-4, align:"right" });
+      tableY += itemHeight;
+    });
+    doc.y = tableY + 5;
     doc.moveDown(.45).strokeColor("#d9dee7").moveTo(doc.page.margins.left,doc.y).lineTo(doc.page.width-doc.page.margins.right,doc.y).stroke().moveDown(.55);
-    label("Subtotal  ", `KES ${Number(order.subtotal).toLocaleString("en-KE")}`); if(+order.delivery_fee) label("Delivery  ", `KES ${Number(order.delivery_fee).toLocaleString("en-KE")}`); doc.moveDown(.3); doc.font("Helvetica-Bold").fontSize(thermal ? 9 : 14).text(`TOTAL PAID   KES ${Number(order.total).toLocaleString("en-KE")}`, { align:"right" });
-    doc.moveDown(1).font("Helvetica").fontSize(thermal ? 6 : 9).fillColor("#667085").text(`Payment: ${String(order.checkout_method).replaceAll("_", " ")}`, { align:"center" }).text("Thank you for choosing Uniform Kings.", { align:"center" }).text("Keep this receipt as proof of purchase.", { align:"center" });
+    label("Subtotal  ", `KES ${Number(order.subtotal).toLocaleString("en-KE")}`); if(+order.delivery_fee) label("Delivery  ", `KES ${Number(order.delivery_fee).toLocaleString("en-KE")}`);
+    doc.moveDown(.45); const totalY = doc.y;
+    doc.fillColor("#172033").font("Helvetica-Bold").fontSize(thermal ? 9 : 14).text("TOTAL PAID", left, totalY, { width:width*.5 });
+    doc.text(`KES ${Number(order.total).toLocaleString("en-KE")}`, left+width*.5, totalY, { width:width*.5, align:"right" });
+    doc.y = totalY + (thermal ? 22 : 28);
+    doc.font("Helvetica").fontSize(thermal ? 6 : 9).fillColor("#667085").text("Thank you for choosing Uniform Kings.", left, doc.y, { width, align:"center" }).text("Keep this receipt as proof of purchase.", left, doc.y, { width, align:"center" });
     doc.end();
   } catch (e) { next(e); }
 });
@@ -653,10 +680,15 @@ app.post("/api/admin/walkins", staff, async (req, res, next) => {
 });
 app.patch("/api/admin/orders/:id", staff, async (req, res, next) => {
   try {
-    await rows(`UPDATE orders SET status=?,payment_status=? WHERE id=?`, [
-      req.body.status,
-      req.body.payment_status,
-      req.params.id,
+    const current = await one(`SELECT status FROM orders WHERE id=?`, [+req.params.id]);
+    if (!current) return res.status(404).json({ error: "Order not found." });
+    if (current.status === "completed") return res.status(409).json({ error: "Completed orders are locked from editing." });
+    const allowedStatus = ["pending_payment","paid","processing","awaiting_personalisation","ready_dispatch","dispatched","ready_pickup","delivered","completed","cancelled","refunded"];
+    const allowedPayment = ["pending","paid","failed","refunded"];
+    if (!allowedStatus.includes(req.body.status) || !allowedPayment.includes(req.body.payment_status)) return res.status(422).json({ error: "Choose a valid order and payment status." });
+    if (req.body.status === "completed") req.body.payment_status = "paid";
+    await rows(`UPDATE orders SET customer_name=?,phone=?,email=?,delivery_address=?,status=?,payment_status=? WHERE id=?`, [
+      String(req.body.customer_name || "Walk-in customer"), String(req.body.phone || ""), String(req.body.email || ""), String(req.body.delivery_address || ""), req.body.status, req.body.payment_status, +req.params.id,
     ]);
     await rows(
       `INSERT INTO audit_logs(user_id,action,entity_type,entity_id,ip_address) VALUES(?,?,?,?,?)`,
@@ -682,6 +714,23 @@ app.get("/api/admin/checkout", staff, async (req, res, next) => {
   } catch (e) {
     next(e);
   }
+});
+app.get("/api/admin/hero-images", staff, async (req, res, next) => {
+  try { ok(res, await rows(`SELECT * FROM hero_images ORDER BY sort_order,id`)); } catch (e) { next(e); }
+});
+app.post("/api/admin/hero-images", staff, upload.fields([{ name:"desktop_image", maxCount:1 }, { name:"mobile_image", maxCount:1 }]), async (req, res, next) => {
+  try {
+    const desktop = req.files?.desktop_image?.[0], mobile = req.files?.mobile_image?.[0];
+    if (!desktop) return res.status(422).json({ error:"A desktop hero image is required." });
+    const result = await rows(`INSERT INTO hero_images(image_path,mobile_image_path,alt_text,sort_order,is_active) VALUES(?,?,?,?,1)`, [`/uploads/${desktop.filename}`, mobile ? `/uploads/${mobile.filename}` : null, String(req.body.alt_text||"Uniform Kings collection"), +req.body.sort_order||0]);
+    ok(res, { id:result.insertId });
+  } catch (e) { next(e); }
+});
+app.patch("/api/admin/hero-images/:id", staff, async (req, res, next) => {
+  try { await rows(`UPDATE hero_images SET is_active=? WHERE id=?`, [req.body.is_active?1:0,+req.params.id]); ok(res,true); } catch (e) { next(e); }
+});
+app.delete("/api/admin/hero-images/:id", staff, async (req, res, next) => {
+  try { await rows(`DELETE FROM hero_images WHERE id=?`, [+req.params.id]); ok(res,true); } catch (e) { next(e); }
 });
 app.get("/api/admin/settings", staff, async (req, res, next) => {
   try {

@@ -55,7 +55,8 @@ async function shop() {
       request("/products?" + sp),
       request("/filters"),
     ]);
-  return `${header()}<main class="wrap shop-page"><div class="crumb">Home / Shop</div><div class="shop-title"><div><span class="eyebrow">Uniform Kings catalogue</span><h1>Shop uniforms</h1><p>${products.length} product${products.length === 1 ? "" : "s"} available</p></div><button class="filter-toggle">${icon("sliders")} Filters</button></div><div class="shop-grid"><aside class="filters"><h3>Filter products</h3><form action="/shop"><label>Search<input name="q" value="${esc(sp.get("q") || "")}" placeholder="Product or school"></label><label>Category<select name="category"><option value="">All categories</option>${filters.categories.map((x) => `<option value="${x.slug}" ${sp.get("category") === x.slug ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label><label>School<select name="school"><option value="">All schools</option>${filters.schools.map((x) => `<option value="${x.slug}" ${sp.get("school") === x.slug ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label><button class="btn primary">Apply filters</button><a href="/shop">Clear filters</a></form></aside><div class="products">${products.length ? products.map(productCard).join("") : '<div class="empty wide">No published products match these filters.</div>'}</div></div></main>${footer()}`;
+  const offersOnly = sp.get("offer") === "1";
+  return `${header()}<main class="wrap shop-page"><div class="crumb">Home / ${offersOnly ? "Offers" : "Shop"}</div><div class="shop-title"><div><span class="eyebrow">Uniform Kings catalogue</span><h1>${offersOnly ? "Current offers" : "Shop uniforms"}</h1><p>${products.length} product${products.length === 1 ? "" : "s"} available</p></div><button class="filter-toggle">${icon("sliders")} Filters</button></div><div class="shop-grid"><aside class="filters"><h3>Filter products</h3><form action="/shop">${offersOnly ? '<input type="hidden" name="offer" value="1">' : ""}<label>Search<input name="q" value="${esc(sp.get("q") || "")}" placeholder="Product or school"></label><label>Category<select name="category"><option value="">All categories</option>${filters.categories.map((x) => `<option value="${x.slug}" ${sp.get("category") === x.slug ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label><label>School<select name="school"><option value="">All schools</option>${filters.schools.map((x) => `<option value="${x.slug}" ${sp.get("school") === x.slug ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label><button class="btn primary">Apply filters</button><a href="${offersOnly ? "/shop?offer=1" : "/shop"}">Clear filters</a></form></aside><div class="products">${products.length ? products.map(productCard).join("") : `<div class="empty wide">${offersOnly ? "No offers are active right now." : "No published products match these filters."}</div>`}</div></div></main>${footer()}`;
 }
 async function legacyProduct(slug) {
   const p = await request("/products/" + slug);
@@ -97,7 +98,19 @@ async function adminCheckout() {
 }
 
 function adminSide(active) {
-  return `<aside class="admin-side"><a class="admin-brand" href="/admin"><img src="/logo.jpeg"><span><b>Uniform Kings</b><small>Administration</small></span></a><small>OVERVIEW</small><a class="${active === "dashboard" ? "active" : ""}" href="/admin">${icon("chart-pie")} Dashboard</a><small>CATALOGUE</small><a class="${active === "products" ? "active" : ""}" href="/admin/products">${icon("shirt")} Products</a><a class="${active === "categories" ? "active" : ""}" href="/admin/categories">${icon("border-all")} Categories</a><a class="${active === "schools" ? "active" : ""}" href="/admin/schools">${icon("school")} Schools</a><a class="${active === "orders" ? "active" : ""}" href="/admin/orders">${icon("box")} Orders</a><a class="${active === "walkins" ? "active" : ""}" href="/admin/walkins">${icon("cash-register")} Walk-in sale</a><a class="${active === "inventory" ? "active" : ""}" href="/admin/inventory">${icon("warehouse")} Inventory</a><small>CONFIGURATION</small><a class="${active === "checkout" ? "active" : ""}" href="/admin/checkout">${icon("credit-card")} Checkout options</a><a class="${active === "settings" ? "active" : ""}" href="/admin/settings">${icon("gear")} Settings</a></aside>`;
+  const link = (key, href, symbol, label) => `<a class="${active === key ? "active" : ""}" href="${href}">${icon(symbol)} ${label}</a>`;
+  return `<aside class="admin-side"><a class="admin-brand" href="/admin"><img src="/logo.jpeg"><span><b>Uniform Kings</b><small>Administration</small></span></a><small>OVERVIEW</small>${link("dashboard", "/admin", "chart-pie", "Dashboard")}<small>CATALOGUE</small>${link("products", "/admin/products", "shirt", "Products")}${link("categories", "/admin/categories", "border-all", "Categories")}${link("schools", "/admin/schools", "school", "Schools")}${link("offers", "/admin/offers", "tags", "Offers")}${link("hero", "/admin/hero-images", "images", "Hero images")}${link("orders", "/admin/orders", "box", "Orders")}${link("walkins", "/admin/walkins", "cash-register", "Walk-in sale")}${link("inventory", "/admin/inventory", "warehouse", "Inventory")}<small>CONFIGURATION</small>${link("checkout", "/admin/checkout", "credit-card", "Checkout options")}${link("settings", "/admin/settings", "gear", "Settings")}</aside>`;
+}
+
+async function adminOffers() {
+  const products = await request("/admin/products");
+  const offers = products.filter((p) => +p.compare_price > +p.price);
+  return `<div class="admin-shell">${adminSide("offers")}<main>${adminTop("Offers")}<div class="admin-content"><div class="admin-heading"><div><h1>Offers</h1><p>An offer is active when Previous price is higher than the current Price.</p></div><a class="btn primary" href="/admin/products">Manage products</a></div><section class="data-card"><div class="data-head"><div><h3>Active offers</h3><small>${offers.length} discounted product${offers.length === 1 ? "" : "s"}</small></div></div><div class="table-wrap"><table><thead><tr><th>Product</th><th>Previous price</th><th>Offer price</th><th>Saving</th><th></th></tr></thead><tbody>${offers.length ? offers.map((p) => `<tr><td><b>${esc(p.name)}</b><small>${esc(p.category_name || "General catalogue")}</small></td><td>${money(p.compare_price)}</td><td><b>${money(p.price)}</b></td><td><span class="status active">Save ${Math.round((1 - +p.price / +p.compare_price) * 100)}%</span></td><td><a class="table-edit" href="/admin/products/${p.id}/edit">${icon("pen")} Edit offer</a></td></tr>`).join("") : '<tr><td colspan="5"><div class="empty">No offers yet. Edit a product and enter a Previous price above its current Price.</div></td></tr>'}</tbody></table></div></section></div></main></div>`;
+}
+
+async function adminHeroImages() {
+  const images = await request("/admin/hero-images");
+  return `<div class="admin-shell">${adminSide("hero")}<main>${adminTop("Hero images")}<div class="admin-content"><div class="admin-heading"><div><h1>Homepage hero images</h1><p>Use dedicated, high-quality banner images. Product photos are no longer used for the hero.</p></div></div><form id="hero-image-form" class="data-card product-form"><div class="hero-size-guide"><b>Recommended sizes</b><span>Desktop: 1920 × 760 px</span><span>Mobile: 900 × 1200 px</span><small>Use JPG, WebP, PNG or AVIF under 5 MB. Keep the subject near the centre; the image will crop, never stretch.</small></div><div class="form-grid"><label>Desktop image<input name="desktop_image" type="file" required accept="image/jpeg,image/png,image/webp,image/avif"></label><label>Mobile image <small>Optional but recommended</small><input name="mobile_image" type="file" accept="image/jpeg,image/png,image/webp,image/avif"></label><label>Image description<input name="alt_text" maxlength="190" placeholder="e.g. Students wearing school uniforms"></label><label>Display order<input name="sort_order" type="number" min="0" value="0"></label></div><div class="form-actions"><button class="btn primary">${icon("upload")} Upload hero image</button></div></form><section class="data-card"><div class="data-head"><div><h3>Hero gallery</h3><small>${images.length} image${images.length === 1 ? "" : "s"}</small></div></div><div class="hero-admin-grid">${images.length ? images.map((image) => `<article><img src="${asset(image.image_path)}" alt="${esc(image.alt_text || "Homepage hero")}"><div><b>${esc(image.alt_text || "Homepage banner")}</b><small>Order ${image.sort_order} · ${image.is_active ? "Visible" : "Hidden"}</small><span><button class="btn ghost" data-hero-toggle="${image.id}" data-active="${image.is_active ? 0 : 1}">${image.is_active ? "Hide" : "Show"}</button><button class="btn danger" data-hero-delete="${image.id}">Delete</button></span></div></article>`).join("") : '<div class="empty wide">No hero images uploaded yet.</div>'}</div></section></div></main></div>`;
 }
 
 async function adminInventory() {
@@ -119,7 +132,7 @@ async function render() {
   let path = location.pathname;
   if (me && me.role !== "customer" && !path.startsWith("/admin")) { history.replaceState({}, "", "/admin"); path = "/admin"; }
   try {
-    if (path === "/") app.innerHTML = await home();
+    if (path === "/") app.innerHTML = await managedHome();
     else if (path === "/shop") app.innerHTML = await shop();
     else if (path.startsWith("/product/")) app.innerHTML = await product(decodeURIComponent(path.split("/").pop()));
     else if (path === "/cart") app.innerHTML = cartPage();
@@ -135,11 +148,13 @@ async function render() {
     else if (path === "/admin/products/new") app.innerHTML = await adminProductNew();
     else if (path === "/admin/categories") app.innerHTML = await adminCategories();
     else if (path === "/admin/schools") app.innerHTML = await adminSchools();
-    else if (path === "/admin/orders") app.innerHTML = await adminOrders();
+    else if (path === "/admin/offers") app.innerHTML = await adminOffers();
+    else if (path === "/admin/hero-images") app.innerHTML = await adminHeroImages();
+    else if (path === "/admin/orders") app.innerHTML = await betterAdminOrders();
     else if (path === "/admin/walkins") app.innerHTML = await adminWalkins();
     else if (path === "/admin/inventory") app.innerHTML = await adminInventory();
     else if (path === "/admin/settings") app.innerHTML = await adminSettings();
-    else if (path.startsWith("/admin/receipt/")) app.innerHTML = await receiptPage(path.split("/").pop());
+    else if (path.startsWith("/admin/receipt/")) app.innerHTML = await orderDetailPage(path.split("/").pop());
     else if (path === "/admin/checkout") app.innerHTML = await adminCheckout();
     else app.innerHTML = `${header()}<main class="not-found"><h1>404</h1><p>We could not find that page.</p><a class="btn primary" href="/">Go home</a></main>${footer()}`;
     if (!path.startsWith("/admin") && !document.querySelector("#product-helper"))
@@ -148,10 +163,10 @@ async function render() {
     enhanceInputs();
     if (path === "/") startHeroSlides();
     if (path === "/admin" && document.querySelector("#sales-chart")) {
-      const d = await request("/admin/dashboard");
+      const d = window.__dashboard;
       new Chart(document.querySelector("#sales-chart"), { type: "line", data: { labels: d.sales.map((x) => new Date(x.day).toLocaleDateString("en-KE", { month: "short", day: "numeric" })), datasets: [{ data: d.sales.map((x) => x.total), borderColor: "#c9972d", backgroundColor: "rgba(201,151,45,.12)", fill: true, tension: .35 }] }, options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true }, x: { grid: { display: false } } }, responsive: true, maintainAspectRatio: false } });
     }
-  } catch (e) { app.innerHTML = `${header()}<main class="not-found"><h1>This page could not load</h1><p>Please check your connection and try again.</p><button class="btn primary" onclick="location.reload()">Try again</button></main>${footer()}`; }
+  } catch (e) { if (path.startsWith("/admin") && app.querySelector(".admin-shell")) toast("Store data is taking longer to load. Please try again shortly.", "error"); else app.innerHTML = `${header()}<main class="not-found"><h1>We are still loading this page</h1><p>The connection is taking longer than expected.</p><button class="btn primary" onclick="location.reload()">Try again</button></main>${footer()}`; }
 }
 
 document.addEventListener("click", async (event) => {
@@ -227,7 +242,9 @@ document.addEventListener("submit", async (event) => {
 
 function productCard(product) {
   const images = String(product.image_paths || product.image_path || "").split("|").filter(Boolean);
-  return `<article class="product-card storefront-card"><a class="product-img" href="/product/${esc(product.slug)}"><div class="card-image-track">${images.length ? images.map((src) => `<img loading="lazy" src="${asset(src)}" alt="${esc(product.name)}">`).join("") : `<span>${icon("shirt")}</span>`}</div>${product.is_new ? '<b class="pill">New</b>' : ""}${images.length > 1 ? `<span class="image-count">${icon("images")} ${images.length}</span>` : ""}</a><div class="product-body"><small>${esc(product.school_name || product.category_name || "Uniform Kings")}</small><a class="product-name" href="/product/${esc(product.slug)}">${esc(product.name)}</a><div class="price"><b>${money(product.price)}</b>${product.compare_price ? `<del>${money(product.compare_price)}</del>` : ""}</div><a class="btn add" href="/product/${esc(product.slug)}">Choose options ${icon("arrow-right")}</a></div></article>`;
+  const discount = +product.compare_price > +product.price ? Math.round((1 - +product.price / +product.compare_price) * 100) : 0;
+  const saving = discount ? +product.compare_price - +product.price : 0;
+  return `<article class="product-card storefront-card"><a class="product-img" href="/product/${esc(product.slug)}"><div class="card-image-track">${images.length ? images.map((src) => `<img loading="lazy" src="${asset(src)}" alt="${esc(product.name)}">`).join("") : `<span>${icon("shirt")}</span>`}</div>${discount ? `<b class="pill offer-pill">Save ${money(saving)}</b>` : product.is_new ? '<b class="pill">NEW</b>' : ""}</a><div class="product-body"><a class="product-name" href="/product/${esc(product.slug)}">${esc(product.name)}</a><div class="price">${discount ? `<del>${money(product.compare_price)}</del>` : ""}<b>${money(product.price)}</b><a class="card-cart" href="/product/${esc(product.slug)}" aria-label="Choose options for ${esc(product.name)}" title="Choose size and colour">${icon("cart-plus")}</a></div></div></article>`;
 }
 
 async function adminProducts() {
@@ -250,6 +267,18 @@ async function home() {
   const d = await request("/catalog/home");
   const slides = d.heroImages || [];
   return `${header()}<main><section class="landing-hero"><div class="hero-slides">${slides.length ? slides.map((slide, index) => `<a href="/product/${esc(slide.slug)}" class="hero-slide ${index === 0 ? "show" : ""}" style="background-image:linear-gradient(90deg,rgba(4,18,44,.78),rgba(4,18,44,.30)),url('${asset(slide.image_path)}')"></a>`).join("") : '<div class="hero-slide show hero-empty"></div>'}</div><div class="landing-overlay wrap"><div class="landing-brand"><img src="/logo.jpeg" alt="Uniform Kings"><div><b>UNIFORM KINGS</b><span>QUALITY UNIFORMS · PROUD FUTURES</span></div></div><h1>Everything they need.<br><i>One reliable uniform shop.</i></h1><p>Shop schoolwear, shoes, sportswear and professional uniforms with easy size and colour choices.</p><div class="hero-buttons"><a class="btn primary" href="/shop">Shop uniforms ${icon("arrow-right")}</a><a class="btn hero-outline" href="/shop">Find your school ${icon("school")}</a></div></div><div class="hero-dots">${slides.slice(0,5).map((_, index) => `<button aria-label="Show image ${index + 1}" class="${index === 0 ? "active" : ""}" data-hero-dot="${index}"></button>`).join("")}</div></section><section class="mobile-trust wrap"><span>${icon("shield-halved")} Quality</span><span>${icon("truck-fast")} Delivery</span><span>${icon("rotate-left")} Exchanges</span></section><section class="landing-categories wrap"><div class="section-head"><div><span class="eyebrow">Browse by need</span><h2>Shop categories</h2></div><a href="/shop">All products ${icon("arrow-right")}</a></div><div class="category-strip">${d.categories.length ? d.categories.map((c, index) => `<a href="/shop?category=${esc(c.slug)}"><span>${icon(["shirt","shoe-prints","bag-shopping","person-running","user-tie","mitten"][index % 6])}</span><b>${esc(c.name)}</b></a>`).join("") : '<div class="empty wide">Publish a category with active products and it will appear here.</div>'}</div></section><section class="landing-products wrap"><div class="section-head"><div><span class="eyebrow">Top deals & new arrivals</span><h2>Popular products</h2></div><a href="/shop">Shop all ${icon("arrow-right")}</a></div><div class="products product-showcase">${d.products.length ? d.products.map(productCard).join("") : '<div class="empty wide">Products will appear here when the store publishes active stock.</div>'}</div></section></main>${footer()}`;
+}
+
+async function polishedHome() {
+  const d = await request("/catalog/home"), slides = d.heroImages || [];
+  return `${header()}<main><section class="landing-hero"><div class="hero-slides">${slides.length ? slides.map((slide, index) => `<a href="/product/${esc(slide.slug)}" class="hero-slide ${index === 0 ? "show" : ""}" style="background-image:linear-gradient(rgba(4,18,44,.62),rgba(4,18,44,.62)),url('${asset(slide.image_path)}')"></a>`).join("") : '<div class="hero-slide show hero-empty"></div>'}</div><div class="landing-overlay wrap hero-centred"><div class="landing-brand hero-logo-only"><img src="/logo.jpeg" alt="Uniform Kings"></div><h1><i>One reliable uniform shop.</i></h1><p>Shop schoolwear, shoes, sportswear and professional uniforms with easy size and colour choices.</p><div class="hero-buttons"><a class="btn primary" href="/shop">Shop uniforms ${icon("arrow-right")}</a><a class="btn hero-outline" href="/shop">Find your school ${icon("school")}</a></div></div><div class="hero-dots">${slides.slice(0,5).map((_, index) => `<button aria-label="Show image ${index + 1}" class="${index === 0 ? "active" : ""}" data-hero-dot="${index}"></button>`).join("")}</div></section><section class="mobile-trust wrap"><span>${icon("shield-halved")} Quality</span><span>${icon("truck-fast")} Delivery</span><span>${icon("rotate-left")} Exchanges</span></section><section class="landing-products wrap"><div class="section-head"><div><span class="eyebrow">Top deals & new arrivals</span><h2>Popular products</h2></div><a href="/shop">Shop all ${icon("arrow-right")}</a></div><div class="products product-showcase">${d.products.length ? d.products.map(productCard).join("") : '<div class="empty wide">Products will appear here when the store publishes active stock.</div>'}</div></section></main>${footer()}`;
+}
+
+async function managedHome() {
+  const d = await request("/catalog/home"), slides = d.heroImages || [];
+  const heroSlides = slides.length ? slides.map((slide, index) => `<div class="hero-slide ${index === 0 ? "show" : ""}"><picture>${slide.mobile_image_path ? `<source media="(max-width: 760px)" srcset="${asset(slide.mobile_image_path)}">` : ""}<img ${index ? 'loading="lazy"' : 'fetchpriority="high"'} src="${asset(slide.image_path)}" alt="${esc(slide.alt_text || "Uniform Kings")}"></picture></div>`).join("") : '<div class="hero-slide show hero-empty"></div>';
+  const categorySections = d.categories.map((category) => ({ ...category, products:d.products.filter((product) => +product.category_id === +category.id) })).filter((category) => category.products.length).map((category) => `<section class="home-category"><div class="wrap"><div class="category-row-head"><h2>${esc(category.name)}</h2><a href="/shop?category=${esc(category.slug)}">Shop ${esc(category.name)} ${icon("arrow-right")}</a></div><div class="category-product-grid">${category.products.slice(0,50).map(productCard).join("")}</div></div></section>`).join("");
+  return `${header()}<main><section class="landing-hero managed-hero"><div class="hero-slides">${heroSlides}</div><div class="landing-overlay wrap hero-centred"><div class="landing-brand hero-logo-only"><img src="/logo.jpeg" alt="Uniform Kings"></div><h1><i>One reliable uniform shop.</i></h1><p>Quality schoolwear, shoes, sportswear and professional uniforms—easy to find, size and order.</p><div class="hero-buttons"><a class="btn primary" href="/shop">Shop uniforms ${icon("arrow-right")}</a><a class="btn hero-outline" href="/shop">Find your school ${icon("school")}</a></div></div><div class="hero-dots">${slides.slice(0, 5).map((_, index) => `<button aria-label="Show image ${index + 1}" class="${index === 0 ? "active" : ""}" data-hero-dot="${index}"></button>`).join("")}</div></section><section class="mobile-trust wrap"><span>${icon("shield-halved")} Quality</span><span>${icon("truck-fast")} Delivery</span><span>${icon("rotate-left")} Exchanges</span></section><section class="shop-intro wrap"><div><span class="eyebrow">Explore the catalogue</span><h2>Shop every collection</h2><p>Browse our active uniform ranges below. Scroll across each collection to see more.</p></div><a class="btn ghost" href="/shop">View all products</a></section>${categorySections || '<section class="wrap"><div class="empty wide">Products will appear here when active categories are stocked.</div></section>'}</main>${footer()}`;
 }
 
 let heroTimer;
@@ -292,6 +321,22 @@ document.addEventListener("submit", async (event) => {
     button.disabled = false;
     button.innerHTML = original;
   }
+}, true);
+
+document.addEventListener("submit", async (event) => {
+  if (event.target.id !== "hero-image-form") return;
+  event.preventDefault(); event.stopImmediatePropagation();
+  const button = event.target.querySelector("button");
+  button.disabled = true; button.innerHTML = `${icon("spinner")} Uploading…`;
+  try { await request("/admin/hero-images", { method: "POST", body: new FormData(event.target) }); toast("Hero image uploaded."); render(); }
+  catch (error) { toast(error.message, "error"); button.disabled = false; button.innerHTML = `${icon("upload")} Upload hero image`; }
+}, true);
+
+document.addEventListener("click", async (event) => {
+  const heroToggle = event.target.closest("[data-hero-toggle]");
+  if (heroToggle) { event.preventDefault(); event.stopImmediatePropagation(); await request(`/admin/hero-images/${heroToggle.dataset.heroToggle}`, { method: "PATCH", body: JSON.stringify({ is_active: +heroToggle.dataset.active }) }); toast("Hero visibility updated."); render(); return; }
+  const heroDelete = event.target.closest("[data-hero-delete]");
+  if (heroDelete) { event.preventDefault(); event.stopImmediatePropagation(); if (!confirm("Delete this hero image?")) return; await request(`/admin/hero-images/${heroDelete.dataset.heroDelete}`, { method: "DELETE" }); toast("Hero image deleted."); render(); }
 }, true);
 
 document.addEventListener("click", async (event) => {
@@ -349,10 +394,10 @@ async function legacyAccount() {
 const legacyAdminSide = (active) =>
   `<aside class="admin-side"><a class="admin-brand" href="/admin"><img src="/logo.jpeg"><span><b>Uniform Kings</b><small>Administration</small></span></a><small>OVERVIEW</small><a class="${active === "dashboard" ? "active" : ""}" href="/admin">${icon("chart-pie")} Dashboard</a><small>COMMERCE</small><a class="${active === "products" ? "active" : ""}" href="/admin/products">${icon("shirt")} Products</a><a class="${active === "orders" ? "active" : ""}" href="/admin/orders">${icon("box")} Orders</a><a href="/admin">${icon("warehouse")} Inventory</a><a href="/admin">${icon("users")} Customers</a><a href="/admin">${icon("school")} Schools</a><small>CONFIGURATION</small><a class="${active === "checkout" ? "active" : ""}" href="/admin/checkout">${icon("credit-card")} Checkout options</a><a href="/admin">${icon("gear")} Settings</a></aside>`;
 const adminTop = (title) =>
-  `<header class="admin-top"><button class="admin-menu">${icon("bars")}</button><div><small>Uniform Kings /</small><b>${title}</b></div><div><button>${icon("bell")}</button><span class="avatar">${esc(me?.name?.[0] || "A")}</span><span><b>${esc(me?.name || "Administrator")}</b><small>${esc(me?.role?.replaceAll("_", " ") || "")}</small></span><button id="logout" class="admin-signout" title="Sign out">${icon("right-from-bracket")}</button></div></header>`;
+  `<header class="admin-top"><button class="admin-menu">${icon("bars")}</button><div><small>Uniform Kings /</small><b>${title}</b></div><div><button>${icon("bell")}</button><span class="avatar">A</span><span><b>Administration</b><small>Store management</small></span><button id="logout" class="admin-signout" title="Sign out">${icon("right-from-bracket")}</button></div></header>`;
 async function adminDashboard() {
   if (!me || me.role === "customer") return authPage("login");
-  const d = await request("/admin/dashboard");
+  const d = await request("/admin/dashboard"); window.__dashboard = d;
   return `<div class="admin-shell">${adminSide("dashboard")}<main>${adminTop("Dashboard")}<div class="admin-content"><div class="admin-heading"><div><h1>Business overview</h1><p>Live store performance and operations.</p></div><span>${icon("calendar")} ${new Date().toLocaleDateString("en-KE", { dateStyle: "long" })}</span></div><div class="stat-grid"><article><span>${icon("sack-dollar")}</span><small>Total sales</small><b>${money(d.stats.total_sales)}</b></article><article><span>${icon("cart-shopping")}</span><small>Total orders</small><b>${d.stats.total_orders}</b></article><article><span>${icon("clock")}</span><small>Pending orders</small><b>${d.stats.pending_orders}</b></article><article><span>${icon("triangle-exclamation")}</span><small>Low stock</small><b>${d.stats.low_stock}</b></article></div><div class="admin-panels"><section class="chart-card"><div><h3>Sales trend</h3><small>Paid orders over the last 14 days</small></div><canvas id="sales-chart"></canvas></section><section class="quick"><h3>Store snapshot</h3><div><span>${icon("users")} Customers</span><b>${d.stats.customers}</b></div><div><span>${icon("shirt")} Active products</span><b>${d.stats.products}</b></div><div><span>${icon("coins")} Today's sales</span><b>${money(d.stats.today_sales)}</b></div></section></div>${adminTable("Recent orders", d.recent, "orders")}</div></main></div>`;
 }
 function adminTable(title, data, type) {
@@ -370,6 +415,12 @@ async function legacyAdminProductNew() {
 async function adminOrders() {
   const data = await request("/admin/orders");
   return `<div class="admin-shell">${adminSide("orders")}<main>${adminTop("Orders")}<div class="admin-content"><div class="admin-heading"><div><h1>Orders</h1><p>Track payment and fulfilment from one place.</p></div></div>${adminTable("All orders", data, "orders")}</div></main></div>`;
+}
+
+async function betterAdminOrders() {
+  const data = await request("/admin/orders");
+  const rowsHtml = data.map((order) => `<tr><td><b>${esc(order.order_number)}</b><small>${esc(order.customer_name)}</small></td><td><a class="order-customer-link" href="/admin/receipt/${order.id}">${esc(order.customer_name)} ${icon("arrow-up-right-from-square")}</a><small>${esc(order.phone || "No phone")}</small></td><td>${new Date(order.created_at).toLocaleDateString("en-KE")}</td><td>${money(order.total)}</td><td><span class="status ${order.payment_status}">${esc(order.payment_status)}</span></td><td><span class="status">${esc(order.status.replaceAll("_", " "))}</span></td></tr>`).join("");
+  return `<div class="admin-shell">${adminSide("orders")}<main>${adminTop("Orders")}<div class="admin-content"><div class="admin-heading"><div><h1>Orders</h1><p>Search customers, review details, update open orders, print and download documents.</p></div></div><section class="data-card"><div class="data-head"><div><h3>All orders</h3><small>${data.length} order${data.length === 1 ? "" : "s"}</small></div><label>${icon("magnifying-glass")}<input data-table-search placeholder="Customer, phone or order number"></label></div><div class="table-wrap"><table><thead><tr><th>Order</th><th>Customer</th><th>Date</th><th>Total</th><th>Payment</th><th>Status</th></tr></thead><tbody>${rowsHtml || '<tr><td colspan="6"><div class="empty">No orders yet.</div></td></tr>'}</tbody></table></div></section></div></main></div>`;
 }
 async function legacyAdminCheckout() {
   const data = await request("/admin/checkout");
@@ -409,7 +460,7 @@ async function legacyRender() {
       app.innerHTML = `${header()}<main class="not-found"><h1>404</h1><p>We could not find that page.</p><a class="btn primary" href="/">Go home</a></main>${footer()}`;
     bind();
     if (path === "/admin" && document.querySelector("#sales-chart")) {
-      const d = await request("/admin/dashboard");
+      const d = window.__dashboard;
       new Chart(document.querySelector("#sales-chart"), {
         type: "line",
         data: {
@@ -663,9 +714,15 @@ window.addEventListener("popstate", render);
 render();
 
 /* Selling-flow upgrades */
-function header() {
+function hardcodedHeader() {
   const accountLink = me ? (me.role === "customer" ? "/account" : "/admin") : "/login";
   return `<header class="top"><div class="mini"><div>Quality uniforms. Confident futures.</div><div><a href="tel:${esc(config.contact_phone || "")}">Help & support</a></div></div><div class="head wrap"><button class="menu" aria-label="Open menu">${icon("bars")}</button><a class="brand" href="/"><img src="/logo.jpeg" alt="Uniform Kings"><span><b>UNIFORM KINGS</b><em>QUALITY UNIFORMS · PROUD FUTURES</em></span></a><form class="search" action="/shop"><input name="q" placeholder="Search uniforms or school" aria-label="Search"><button>${icon("magnifying-glass")}<span>Search</span></button></form><nav class="actions"><a href="${accountLink}">${icon("user")}<small>${me ? esc(me.name.split(" ")[0]) : "Sign in"}</small></a><a href="/cart">${icon("bag-shopping")}<small>Cart</small><b class="cart-count">${countCart()}</b></a></nav></div><nav class="nav"><div class="wrap"><a href="/">Home</a><a href="/shop">Shop all</a><a href="/shop?category=school-uniforms">School uniforms</a><a href="/shop?category=corporate-uniforms">Corporate</a><a href="/shop?category=sportswear">Sportswear</a><a href="/shop?category=shoes">Shoes</a><a href="/shop?category=accessories">Accessories</a><a href="/shop">Offers</a></div></nav></header><aside class="drawer"><button class="drawer-close">${icon("xmark")}</button><a href="/">Home</a><a href="/shop">Shop all uniforms</a><a href="/shop">Find a school</a>${me ? `<a href="${accountLink}">My account</a><a href="/account?section=orders">My orders</a><form id="drawer-logout"><button>Sign out</button></form>` : `<a href="/login">Sign in</a><a href="/register">Create account</a>`}<a href="/cart">My cart (${countCart()})</a></aside><div class="scrim"></div>`;
+}
+
+function header() {
+  const accountLink = me ? (me.role === "customer" ? "/account" : "/admin") : "/login";
+  const categoryLinks = (config.categories || []).map((category) => `<a href="/shop?category=${esc(category.slug)}">${esc(category.name)}</a>`).join("");
+  return `<header class="top"><div class="mini"><div>Quality uniforms. Confident futures.</div><div><a href="tel:${esc(config.contact_phone || "")}">Help & support</a></div></div><div class="head wrap"><button class="menu" aria-label="Open menu">${icon("bars")}</button><a class="brand" href="/"><img src="/logo.jpeg" alt="Uniform Kings"><span><b>UNIFORM KINGS</b><em>QUALITY UNIFORMS · PROUD FUTURES</em></span></a><form class="search" action="/shop"><input name="q" placeholder="Search uniforms or school" aria-label="Search"><button>${icon("magnifying-glass")}<span>Search</span></button></form><nav class="actions"><a href="${accountLink}">${icon("user")}<small>${me ? esc(me.name.split(" ")[0]) : "Sign in"}</small></a><a href="/cart">${icon("bag-shopping")}<small>Cart</small><b class="cart-count">${countCart()}</b></a></nav></div><nav class="nav"><div class="wrap"><a href="/">Home</a><a href="/shop">Shop all</a>${categoryLinks}<a href="/shop?offer=1">Offers</a></div></nav></header><aside class="drawer"><button class="drawer-close">${icon("xmark")}</button><a href="/">Home</a><a href="/shop">Shop all uniforms</a>${categoryLinks}<a href="/shop?offer=1">Offers</a><a href="/shop">Find a school</a>${me ? `<a href="${accountLink}">My account</a><a href="/account?section=orders">My orders</a><form id="drawer-logout"><button>Sign out</button></form>` : `<a href="/login">Sign in</a><a href="/register">Create account</a>`}<a href="/cart">My cart (${countCart()})</a></aside><div class="scrim"></div>`;
 }
 
 async function legacyNewHome() {
@@ -698,6 +755,14 @@ async function receiptPage(id) {
   return `<main class="print-page"><div class="print-actions"><a class="btn ghost" href="/admin/orders">${icon("arrow-left")} Back to orders</a><button class="btn primary" data-print="invoice">${icon("print")} Print A4 invoice</button><button class="btn primary" data-print="thermal">${icon("receipt")} Print thermal receipt</button><button class="btn ghost" data-download="invoice" data-order-id="${order.id}">${icon("download")} Download invoice</button><button class="btn ghost" data-download="thermal" data-order-id="${order.id}">${icon("download")} Download receipt</button></div><article class="invoice" id="print-document"><header><div class="brand"><img src="/logo.jpeg" alt=""><span><b>UNIFORM KINGS</b><em>QUALITY UNIFORMS · PROUD FUTURES</em></span></div><div><h1>INVOICE</h1><b>${esc(order.order_number)}</b><small>${new Date(order.created_at).toLocaleString("en-KE")}</small></div></header><section class="invoice-meta"><div><b>Billed to</b><span>${esc(order.customer_name)}</span><span>${esc(order.phone || "Walk-in customer")}</span><span>${esc(order.email || "")}</span></div><div><b>Payment</b><span>${esc(order.checkout_method.replaceAll("_", " "))}</span><b>Order status</b><span>${esc(order.status.replaceAll("_", " "))}</span></div></section><table><thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>${lines}</tbody></table><section class="invoice-total"><span>Subtotal</span><b>${money(order.subtotal)}</b><span>Delivery</span><b>${money(order.delivery_fee)}</b><strong>Total paid</strong><strong>${money(order.total)}</strong></section><footer>Thank you for choosing Uniform Kings.<br>Keep this receipt as proof of purchase.</footer></article></main>`;
 }
 
+async function orderDetailPage(id) {
+  const order = await request(`/admin/orders/${id}`);
+  const preview = await receiptPage(id);
+  const editable = order.status !== "completed";
+  const controls = editable ? `<form id="order-edit-form" data-order-id="${order.id}" class="order-edit-card"><div class="order-edit-title"><b>Edit open order</b><small>Customer and fulfilment details can be changed until completion.</small></div><label>Customer<input name="customer_name" value="${esc(order.customer_name)}" required></label><label>Phone<input name="phone" value="${esc(order.phone || "")}"></label><label>Email<input name="email" type="email" value="${esc(order.email || "")}"></label><label>Status<select name="status">${["pending_payment","paid","processing","awaiting_personalisation","ready_dispatch","dispatched","ready_pickup","delivered","completed","cancelled","refunded"].map((status) => `<option value="${status}" ${order.status === status ? "selected" : ""}>${status.replaceAll("_", " ")}</option>`).join("")}</select></label><label>Payment<select name="payment_status">${["pending","paid","failed","refunded"].map((status) => `<option value="${status}" ${order.payment_status === status ? "selected" : ""}>${status}</option>`).join("")}</select></label><label class="wide-field">Delivery details<input name="delivery_address" value="${esc(order.delivery_address || "")}"></label><button class="btn primary">Save order</button></form>` : `<div class="order-locked">${icon("lock")} This order is complete and locked from editing. Printing and downloads remain available.</div>`;
+  return preview.replace("<h1>INVOICE</h1>", '<h1><span class="invoice-label">TAX INVOICE</span><span class="receipt-label">SALES RECEIPT</span></h1>').replace('<b>Payment</b><span>walkin</span>', "").replace('<article class="invoice"', `${controls}<article class="invoice"`);
+}
+
 function renderPosCart() {
   const target = document.querySelector("#walkin-items"), items = window.__posCart || [];
   if (!target) return;
@@ -724,12 +789,20 @@ document.addEventListener("click", async (event) => {
     try {
       const product = await request(`/products/${productButton.dataset.posSlug}`);
       const option = product.variants.filter((v) => v.stock > 0);
-      const selection = option.length === 1 ? option[0] : option[+prompt(`Choose option:\n${option.map((v,i)=>`${i+1}. ${[v.size,v.colour].filter(Boolean).join(" / ") || "Standard"} (${v.stock} available)`).join("\n")}`) - 1];
-      if (!selection) return toast("Choose a valid in-stock option.", "error");
-      const existing = window.__posCart.find((x) => x.variant_id === selection.id);
-      if (existing) existing.quantity = Math.min(existing.quantity + 1, selection.stock); else window.__posCart.push({ variant_id:selection.id, name:product.name, size:selection.size, colour:selection.colour, stock:selection.stock, price:+product.price + +selection.price_adjustment, quantity:1 });
-      renderPosCart();
+      if (!option.length) return toast("This product has no available options.", "error");
+      document.querySelector(".pos-picker")?.remove();
+      const picker = document.createElement("div"); picker.className = "pos-picker";
+      picker.innerHTML = `<div class="pos-picker-card"><header><div><span>${icon("cart-plus")}</span><div><small>Add to walk-in sale</small><h2>${esc(product.name)}</h2><p>${money(product.price)} · ${product.stock} total in stock</p></div></div><button type="button" data-close-pos aria-label="Close">${icon("xmark")}</button></header><div class="pos-picker-options">${option.map((variant) => `<button type="button" data-pos-option="${variant.id}"><span>${icon("shirt")}</span><b>${esc([variant.size,variant.colour].filter(Boolean).join(" / ") || "Standard")}</b><small>${variant.stock} available</small><strong>${money(+product.price + +variant.price_adjustment)}</strong></button>`).join("")}</div><footer>Choose the exact size and colour. It will be added to the current sale.</footer></div>`;
+      picker.__product = product; document.body.appendChild(picker);
     } catch (error) { toast(error.message, "error"); }
+  }
+  if (event.target.closest("[data-close-pos]") || event.target.classList.contains("pos-picker")) { document.querySelector(".pos-picker")?.remove(); return; }
+  const posOption = event.target.closest("[data-pos-option]");
+  if (posOption) {
+    const picker = posOption.closest(".pos-picker"), product = picker.__product, selection = product.variants.find((variant) => +variant.id === +posOption.dataset.posOption);
+    const existing = window.__posCart.find((item) => item.variant_id === selection.id);
+    if (existing) existing.quantity = Math.min(existing.quantity + 1, selection.stock); else window.__posCart.push({ variant_id:selection.id, name:product.name, size:selection.size, colour:selection.colour, stock:selection.stock, price:+product.price + +selection.price_adjustment, quantity:1 });
+    picker.remove(); renderPosCart(); toast(`${product.name} added to the sale.`); return;
   }
   const quantity = event.target.closest("[data-pos-qty]");
   if (quantity) { const item=window.__posCart[+quantity.dataset.posQty]; item.quantity=Math.max(1,Math.min(item.stock,item.quantity + +quantity.dataset.delta)); renderPosCart(); }
@@ -742,6 +815,14 @@ document.addEventListener("submit", async (event) => {
   event.preventDefault(); const form=event.target, button=form.querySelector("#complete-walkin"); button.disabled=true; button.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i> Completing sale…';
   try { const body=Object.fromEntries(new FormData(form)); body.items=window.__posCart.map((item)=>({variant_id:item.variant_id,quantity:item.quantity})); body.notes=`Walk-in payment: ${body.payment_method}`; const order=await request("/admin/walkins",{method:"POST",body:JSON.stringify(body)}); toast("Sale completed. Receipt ready."); go(`/admin/receipt/${order.id}`); } catch(error) { toast(error.message,"error"); button.disabled=false; button.textContent="Complete sale & print receipt"; }
 });
+
+document.addEventListener("submit", async (event) => {
+  if (event.target.id !== "order-edit-form") return;
+  event.preventDefault(); event.stopImmediatePropagation();
+  const form = event.target, button = form.querySelector("button"); button.disabled = true; button.innerHTML = `${icon("spinner")} Saving…`;
+  try { await request(`/admin/orders/${form.dataset.orderId}`, { method:"PATCH", body:JSON.stringify(Object.fromEntries(new FormData(form))) }); toast("Order details saved."); render(); }
+  catch (error) { toast(error.message, "error"); button.disabled = false; button.textContent = "Save order"; }
+}, true);
 
 document.addEventListener("submit", async (event) => {
   const form = event.target;
