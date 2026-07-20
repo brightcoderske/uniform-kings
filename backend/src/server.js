@@ -787,8 +787,12 @@ app.use((err, req, res, next) => {
       error: prod ? "Something went wrong. Please try again." : err.message,
     });
 });
-app.listen(+(process.env.PORT || 3001), () =>
-  console.log(
-    `Uniform Kings API: http://localhost:${process.env.PORT || 3001}`,
-  ),
-);
+export default app;
+
+if (process.env.UNIFORM_KINGS_PASSENGER !== "1") {
+  app.listen(+(process.env.PORT || 3001), () =>
+    console.log(
+      `Uniform Kings API: http://localhost:${process.env.PORT || 3001}`,
+    ),
+  );
+}
