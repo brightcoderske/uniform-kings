@@ -6,7 +6,7 @@
   "engines": { "node": ">=20" },
   "scripts": {
     "dev": "node --watch src/server.js",
-    "start": "node app.js",
+    "start": "node app.cjs",
     "deploy:hostafrica": "bash scripts/deploy-hostafrica.sh",
     "db:init": "node scripts/init-db.js",
     "check": "node --check src/server.js"
