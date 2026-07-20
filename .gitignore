@@ -6,6 +6,7 @@ public/uploads/*
 backend/uploads/*
 !backend/uploads/.gitkeep
 npm-debug.log*
+.vercel/
 docs/
 tmp/
 plans/

@@ -1,6 +1,14 @@
 import 'dotenv/config';import mysql from 'mysql2/promise';import bcrypt from 'bcryptjs';import {readFile} from 'node:fs/promises';
 const cfg={host:process.env.DB_HOST||'127.0.0.1',port:+(process.env.DB_PORT||3306),user:process.env.DB_USER||'root',password:process.env.DB_PASSWORD||''},db=process.env.DB_NAME||'uniform_kings';
-const c=await mysql.createConnection(cfg);await c.query(`CREATE DATABASE IF NOT EXISTS \`${db.replaceAll('`','')}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);await c.query(`USE \`${db.replaceAll('`','')}\``);
+const c=await mysql.createConnection(cfg);
+try {
+  await c.query(`CREATE DATABASE IF NOT EXISTS \`${db.replaceAll('`','')}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+} catch (error) {
+  // Shared-hosting database users normally cannot create databases. The database
+  // must already exist and be assigned to the user through cPanel in that case.
+  if (!['ER_DBACCESS_DENIED_ERROR', 'ER_ACCESS_DENIED_ERROR'].includes(error.code)) throw error;
+}
+await c.query(`USE \`${db.replaceAll('`','')}\``);
 const sql=await readFile(new URL('../../sql/schema.sql',import.meta.url),'utf8');for(const s of sql.split(/;\s*(?:\r?\n|$)/).map(x=>x.trim()).filter(Boolean))await c.query(s);
 const [checkoutColumns]=await c.query("SHOW COLUMNS FROM checkout_methods LIKE 'is_default'");
 if(!checkoutColumns.length) await c.query("ALTER TABLE checkout_methods ADD COLUMN is_default BOOLEAN NOT NULL DEFAULT FALSE AFTER is_enabled");

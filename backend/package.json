@@ -3,9 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "engines": { "node": ">=20" },
   "scripts": {
     "dev": "node --watch src/server.js",
-    "start": "node src/server.js",
+    "start": "node app.js",
+    "deploy:hostafrica": "bash scripts/deploy-hostafrica.sh",
     "db:init": "node scripts/init-db.js",
     "check": "node --check src/server.js"
   },
@@ -22,7 +24,7 @@
     "multer": "^2.0.2",
     "mysql2": "^3.14.2",
     "nanoid": "^5.1.5",
-    "nodemailer": "^7.0.6",
+    "nodemailer": "^9.0.3",
     "pdfkit": "^0.17.1"
   }
 }
