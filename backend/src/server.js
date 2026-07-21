@@ -156,6 +156,7 @@ app.post("/api/payments/mpesa/initiate", auth, async (req, res, next) => {
 });
 app.get("/api/config", async (req, res, next) => {
   try {
+    res.set("Cache-Control", "public, max-age=120, stale-while-revalidate=300");
     const data = (await one(`SELECT MAX(CASE WHEN setting_key='site_name' THEN setting_value END) site_name,MAX(CASE WHEN setting_key='whatsapp_number' THEN setting_value END) whatsapp_number,MAX(CASE WHEN setting_key='contact_phone' THEN setting_value END) contact_phone,MAX(CASE WHEN setting_key='contact_email' THEN setting_value END) contact_email FROM settings`)) || {};
     data.categories = await rows(`SELECT name,slug FROM categories WHERE is_active=1 ORDER BY sort_order,name LIMIT 6`);
     ok(res, data);
@@ -163,6 +164,7 @@ app.get("/api/config", async (req, res, next) => {
 });
 app.get("/api/catalog/home", async (req, res, next) => {
   try {
+    res.set("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
     const [products, categories, schools, heroImages] = await Promise.all([
       rows(
         `SELECT p.*,i.image_path,(SELECT GROUP_CONCAT(image_path ORDER BY sort_order,id SEPARATOR '|') FROM product_images WHERE product_id=p.id) image_paths,c.name category_name,c.slug category_slug,s.name school_name FROM products p LEFT JOIN product_images i ON i.id=(SELECT MIN(id) FROM product_images WHERE product_id=p.id) JOIN categories c ON c.id=p.category_id AND c.is_active=1 LEFT JOIN schools s ON s.id=p.school_id WHERE p.status='active' ORDER BY c.sort_order,c.name,p.is_featured DESC,p.is_new DESC,p.updated_at DESC LIMIT 600`,
@@ -182,6 +184,7 @@ app.get("/api/catalog/home", async (req, res, next) => {
 });
 app.get("/api/products", async (req, res, next) => {
   try {
+    res.set("Cache-Control", "public, max-age=60, stale-while-revalidate=180");
     const q = String(req.query.q || "").trim(),
       category = String(req.query.category || ""),
       school = String(req.query.school || ""),
@@ -214,6 +217,7 @@ app.get("/api/products", async (req, res, next) => {
 });
 app.get("/api/products/:slug", async (req, res, next) => {
   try {
+    res.set("Cache-Control", "public, max-age=120, stale-while-revalidate=300");
     const p = await one(
       `SELECT p.*,c.name category_name,s.name school_name FROM products p LEFT JOIN categories c ON c.id=p.category_id LEFT JOIN schools s ON s.id=p.school_id WHERE p.slug=? AND p.status='active'`,
       [req.params.slug],
@@ -235,6 +239,7 @@ app.get("/api/products/:slug", async (req, res, next) => {
 });
 app.get("/api/filters", async (req, res, next) => {
   try {
+    res.set("Cache-Control", "public, max-age=300, stale-while-revalidate=600");
     const [categories, schools] = await Promise.all([
       rows(
         `SELECT id,name,slug FROM categories WHERE is_active=1 ORDER BY name`,

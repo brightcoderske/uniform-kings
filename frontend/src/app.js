@@ -1,6 +1,7 @@
 import "@fortawesome/fontawesome-free/css/all.min.css";
 import { request, asset, API } from "./api.js";
 import { getCart, saveCart, addCart, countCart, totalCart } from "./store.js";
+const SITE_URL = "https://uniformkings.co.ke";
 const app = document.querySelector("#app"),
   money = (n) =>
     new Intl.NumberFormat("en-KE", {
@@ -31,12 +32,23 @@ const app = document.querySelector("#app"),
     document.body.classList.add("route-loading");
     Promise.resolve(render()).finally(() => document.body.classList.remove("route-loading"));
   };
+let cachedConfig = {};
+try { cachedConfig = JSON.parse(localStorage.getItem("uk-config-cache") || "{}"); } catch {}
 let me = null,
-  config = {},
+  config = cachedConfig,
   initialHomeRequest = location.pathname === "/" ? request("/catalog/home") : null;
-try {
-  [me, config] = await Promise.all([request("/auth/me"), request("/config")]);
-} catch {}
+const sessionBootstrap = Promise.all([request("/auth/me"), request("/config")]);
+const protectedStartup = location.pathname.startsWith("/admin") || ["/account", "/checkout"].includes(location.pathname);
+if (protectedStartup) {
+  try { [me, config] = await sessionBootstrap; localStorage.setItem("uk-config-cache", JSON.stringify(config)); } catch {}
+} else {
+  sessionBootstrap.then(([user, settings]) => {
+    me = user; config = settings; localStorage.setItem("uk-config-cache", JSON.stringify(config));
+    if (me?.role && me.role !== "customer") return go("/admin");
+    const account = document.querySelector(".actions > a:first-child");
+    if (account) { account.href = me ? "/account" : "/login"; const label=account.querySelector("small"); if(label) label.textContent=me ? me.name.split(" ")[0] : "Sign in"; }
+  }).catch(() => {});
+}
 const icon = (n) => `<i class="fa-solid fa-${n}"></i>`;
 function legacyHeader() {
   return `<header class="top"><div class="mini"><div>Quality uniforms. Confident futures.</div><div><a href="tel:${esc(config.contact_phone || "")}">Help & support</a></div></div><div class="head wrap"><button class="menu" aria-label="Open menu">${icon("bars")}</button><a class="brand" href="/"><img src="/logo.jpeg" alt="Uniform Kings"><span><b>UNIFORM</b><em>KINGS</em></span></a><form class="search" action="/shop"><input name="q" placeholder="Search uniforms, school or product code" aria-label="Search"><button>${icon("magnifying-glass")}<span>Search</span></button></form><nav class="actions"><a href="${me ? (me.role === "customer" ? "/account" : "/admin") : "/login"}">${icon("user")}<small>${me ? esc(me.name.split(" ")[0]) : "Sign in"}</small></a><a href="/cart">${icon("bag-shopping")}<small>Cart</small><b class="cart-count">${countCart()}</b></a></nav></div><nav class="nav"><div class="wrap"><a href="/">Home</a><a href="/shop">Shop all</a><a href="/shop?category=school-uniforms">School uniforms</a><a href="/shop?category=corporate-uniforms">Corporate</a><a href="/shop?category=sportswear">Sportswear</a><a href="/shop?category=shoes">Shoes</a><a href="/shop?category=accessories">Accessories</a><a href="/shop">Offers</a></div></nav></header><aside class="drawer"><button class="drawer-close">${icon("xmark")}</button><a href="/">Home</a><a href="/shop">Shop all</a><a href="/shop">Categories</a><a href="/shop">Find a school</a><a href="${me ? "/account" : "/login"}">My account</a><a href="/cart">My cart</a></aside><div class="scrim"></div>`;
@@ -305,7 +317,13 @@ async function polishedHome() {
 async function managedHome() {
   const homeRequest = initialHomeRequest;
   initialHomeRequest = null;
-  const d = await (homeRequest || request("/catalog/home")), slides = d.heroImages || [];
+  let cachedHome = null;
+  try { const cached=JSON.parse(localStorage.getItem("uk-home-cache") || "null"); if (cached && Date.now()-cached.savedAt < 300000) cachedHome=cached.data; } catch {}
+  const freshRequest = homeRequest || request("/catalog/home");
+  const d = cachedHome || await freshRequest;
+  if (cachedHome) freshRequest.then((data) => localStorage.setItem("uk-home-cache", JSON.stringify({ savedAt:Date.now(), data }))).catch(() => {});
+  else { try { localStorage.setItem("uk-home-cache", JSON.stringify({ savedAt:Date.now(), data:d })); } catch {} }
+  const slides = d.heroImages || [];
   setSeo({
     title: "Uniform Kings Kenya | School Uniforms, Shoes & Workwear",
     description: "Shop quality school uniforms, school shoes, sweaters, shirts, trousers, tracksuits, sportswear and corporate uniforms with delivery in Kenya.",
@@ -779,7 +797,6 @@ function header() {
   return `<header class="top"><div class="mini"><div>Quality uniforms. Confident futures.</div><div><a href="tel:${esc(config.contact_phone || "")}">Help & support</a></div></div><div class="head wrap"><button class="menu" aria-label="Open menu">${icon("bars")}</button><a class="brand" href="/"><img src="/logo.jpeg" alt="Uniform Kings"><span><b>UNIFORM KINGS</b><em>QUALITY UNIFORMS · PROUD FUTURES</em></span></a><form class="search" action="/shop"><input name="q" placeholder="Search uniforms or school" aria-label="Search"><button>${icon("magnifying-glass")}<span>Search</span></button></form><nav class="actions"><a href="${accountLink}">${icon("user")}<small>${me ? esc(me.name.split(" ")[0]) : "Sign in"}</small></a><a href="/cart">${icon("bag-shopping")}<small>Cart</small><b class="cart-count">${countCart()}</b></a></nav></div><nav class="nav"><div class="wrap"><a href="/">Home</a><a href="/shop">Shop all</a>${categoryLinks}<a href="/shop?offer=1">Offers</a></div></nav></header><aside class="drawer"><button class="drawer-close">${icon("xmark")}</button><a href="/">Home</a><a href="/shop">Shop all uniforms</a>${categoryLinks}<a href="/shop?offer=1">Offers</a><a href="/shop">Find a school</a>${me ? `<a href="${accountLink}">My account</a><a href="/account?section=orders">My orders</a><form id="drawer-logout"><button>Sign out</button></form>` : `<a href="/login">Sign in</a><a href="/register">Create account</a>`}<a href="/cart">My cart (${countCart()})</a></aside><div class="scrim"></div>`;
 }
 
-const SITE_URL = "https://uniformkings.co.ke";
 function numberForSchema() {
   const telephone = String(config.contact_phone || config.whatsapp_number || "").trim();
   return telephone ? { "@type":"ContactPoint", telephone, contactType:"customer service", areaServed:"KE", availableLanguage:["English","Swahili"] } : undefined;
