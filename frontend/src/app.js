@@ -51,6 +51,8 @@ if (protectedStartup) {
   }).catch(() => {});
 }
 const icon = (n) => `<i class="fa-solid fa-${n}"></i>`;
+const acceptedImageTypes=new Set(["image/jpeg","image/png","image/webp","image/avif"]), MAX_IMAGE_SIZE=2*1024*1024;
+function approvedImages(files){const accepted=[],rejected=[];for(const file of files){if(!file?.size)continue;if(file.size>MAX_IMAGE_SIZE)rejected.push(`${file.name} is larger than 2 MB`);else if(!acceptedImageTypes.has(file.type))rejected.push(`${file.name} is not a supported image`);else accepted.push(file);}return {accepted,rejected};}
 function legacyHeader() {
   return `<header class="top"><div class="mini"><div>Quality uniforms. Confident futures.</div><div><a href="tel:${esc(config.contact_phone || "")}">Help & support</a></div></div><div class="head wrap"><button class="menu" aria-label="Open menu">${icon("bars")}</button><a class="brand" href="/"><img src="/logo.jpeg" alt="Uniform Kings"><span><b>UNIFORM</b><em>KINGS</em></span></a><form class="search" action="/shop"><input name="q" placeholder="Search uniforms, school or product code" aria-label="Search"><button>${icon("magnifying-glass")}<span>Search</span></button></form><nav class="actions"><a href="${me ? (me.role === "customer" ? "/account" : "/admin") : "/login"}">${icon("user")}<small>${me ? esc(me.name.split(" ")[0]) : "Sign in"}</small></a><a href="/cart">${icon("bag-shopping")}<small>Cart</small><b class="cart-count">${countCart()}</b></a></nav></div><nav class="nav"><div class="wrap"><a href="/">Home</a><a href="/shop">Shop all</a><a href="/shop?category=school-uniforms">School uniforms</a><a href="/shop?category=corporate-uniforms">Corporate</a><a href="/shop?category=sportswear">Sportswear</a><a href="/shop?category=shoes">Shoes</a><a href="/shop?category=accessories">Accessories</a><a href="/shop">Offers</a></div></nav></header><aside class="drawer"><button class="drawer-close">${icon("xmark")}</button><a href="/">Home</a><a href="/shop">Shop all</a><a href="/shop">Categories</a><a href="/shop">Find a school</a><a href="${me ? "/account" : "/login"}">My account</a><a href="/cart">My cart</a></aside><div class="scrim"></div>`;
 }
@@ -193,6 +195,7 @@ async function render() {
       app.insertAdjacentHTML("beforeend", chatWidget());
     bind();
     enhanceInputs();
+    startProductImageLoops();
     if (location.hash) requestAnimationFrame(() => document.querySelector(location.hash)?.scrollIntoView({ behavior:"smooth", block:"start" }));
     if (path === "/") startHeroSlides();
     pageLoadRetries=0;
@@ -270,6 +273,10 @@ document.addEventListener("submit", async (event) => {
 });
 
 function enhanceInputs() {
+  document.querySelectorAll('input[name="images"]').forEach((input) => {
+    const note=input.closest("label")?.querySelector("small");
+    if(note)note.textContent=input.multiple?"Up to 16 images · maximum 2 MB each":"Maximum 2 MB";
+  });
   document.querySelectorAll('input[type="password"]').forEach((input) => {
     if (input.parentElement?.classList.contains("password-field")) return;
     const wrap = document.createElement("div"); wrap.className = "password-field";
@@ -295,6 +302,28 @@ function enhanceInputs() {
   if(categoryButtons.length){const guide=categoryButtons[0].closest(".data-card")?.querySelector(".data-head small");if(guide)guide.textContent+=window.matchMedia("(pointer: coarse)").matches?" · Edit the order number to reorder":" · Drag rows to reorder";}
   if(location.pathname==="/admin/products"&&window.__adminProducts){document.querySelectorAll(".admin-content tbody tr").forEach((row,index)=>{const product=window.__adminProducts[index],cell=row.querySelector("td");if(!product||!cell||cell.querySelector(".admin-product-thumb"))return;cell.insertAdjacentHTML("afterbegin",product.image_path?`<img class="admin-product-thumb" src="${asset(product.image_path)}" alt="${esc(product.name)}">`:`<span class="admin-product-thumb empty-thumb">${icon("shirt")}</span>`);});}
   if(location.pathname==="/admin/products"&&window.__adminProductPage){const {catalog,filters,sp}=window.__adminProductPage,section=document.querySelector(".admin-content .data-card"),small=section?.querySelector(".data-head small");if(small)small.textContent=`${catalog.total} product${catalog.total===1?"":"s"} · showing ${catalog.items.length}`;section?.querySelector(".data-head>label")?.remove();if(section&&!document.querySelector("[data-admin-product-filter]")){section.insertAdjacentHTML("beforebegin",`<form class="admin-product-filters" data-admin-product-filter><label>${icon("magnifying-glass")}<input name="q" value="${esc(sp.get("q")||"")}" placeholder="Search product, category or school"></label><select name="category"><option value="">All categories</option>${filters.categories.map((category)=>`<option value="${esc(category.slug)}" ${sp.get("category")===category.slug?"selected":""}>${esc(category.name)}</option>`).join("")}</select><select name="status"><option value="">All statuses</option>${["active","draft","archived"].map((status)=>`<option value="${status}" ${sp.get("status")===status?"selected":""}>${status[0].toUpperCase()+status.slice(1)}</option>`).join("")}</select><button class="btn primary">Filter</button><a href="/admin/products">Clear</a></form>`);const link=(page)=>{const params=new URLSearchParams(sp);params.set("page",page);return `/admin/products?${params}`;};section.insertAdjacentHTML("afterend",`<nav class="catalog-pagination"><span>Showing ${catalog.total?((catalog.page-1)*catalog.per_page)+1:0}–${Math.min(catalog.page*catalog.per_page,catalog.total)} of ${catalog.total}</span><div>${catalog.page>1?`<a href="${link(catalog.page-1)}">${icon("arrow-left")} Previous</a>`:""}<b>Page ${catalog.page} of ${catalog.pages}</b>${catalog.page<catalog.pages?`<a href="${link(catalog.page+1)}">Next ${icon("arrow-right")}</a>`:""}</div></nav>`);}}
+}
+
+let productImageLoopTimer;
+function startProductImageLoops() {
+  clearInterval(productImageLoopTimer);
+  const tracks=[...document.querySelectorAll(".storefront-card .card-image-track")];
+  tracks.forEach((track)=>{
+    const images=[...track.querySelectorAll("img")];
+    images.forEach((image,index)=>image.classList.toggle("is-active",index===0));
+    track.dataset.activeImage="0";
+  });
+  if(!tracks.some((track)=>track.querySelectorAll("img").length>1))return;
+  productImageLoopTimer=setInterval(()=>{
+    tracks.forEach((track)=>{
+      const images=[...track.querySelectorAll("img")];
+      if(images.length<2)return;
+      const current=Number(track.dataset.activeImage||0),next=(current+1)%images.length;
+      images[next].classList.add("is-active");
+      requestAnimationFrame(()=>images[current].classList.remove("is-active"));
+      track.dataset.activeImage=String(next);
+    });
+  },3200);
 }
 
 document.addEventListener("click", async (event) => {
@@ -339,7 +368,8 @@ async function adminProductEdit(id) {
   window.__editingProduct = detail;
   const sizes = [...new Set(detail.variants.map((v) => v.size).filter(Boolean))].join(", ");
   const colours = [...new Set(detail.variants.map((v) => v.colour).filter(Boolean))].join(", ");
-  const images = detail.images.map((image) => `<img src="${asset(image.image_path)}" alt="${esc(image.alt_text || p.name)}">`).join("");
+  window.__deletedProductImages=new Set();
+  const images = detail.images.map((image) => `<span class="editable-image" data-product-image-card="${image.id}"><img src="${asset(image.image_path)}" alt="${esc(image.alt_text || p.name)}"><button type="button" data-remove-product-image="${image.id}" aria-label="Remove image">${icon("xmark")}</button></span>`).join("");
   return `<div class="admin-shell">${adminSide("products")}<main>${adminTop("Edit product")}<div class="admin-content"><div class="admin-heading"><div><h1>Edit product</h1><p>Edit every product detail, option, image and shared stock quantity.</p></div><a class="btn ghost" href="/admin/products">Back to products</a></div><form id="edit-product-form" data-product-id="${p.id}" class="data-card product-form"><div class="form-grid"><label>Product name<input name="name" value="${esc(p.name)}" required></label><label>Category<select name="category_id"><option value="">General catalogue</option>${filters.categories.map((x) => `<option value="${x.id}" ${+p.category_id === +x.id ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label><label>School<select name="school_id"><option value="">Not school-specific</option>${filters.schools.map((x) => `<option value="${x.id}" ${+p.school_id === +x.id ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label><label>Price (KES)<input name="price" type="number" min="0" step="0.01" value="${p.price}" required></label><label>Previous price<input name="compare_price" type="number" min="0" step="0.01" value="${p.compare_price || ""}"></label><label>Total product stock <small>Shared across all options</small><input name="stock" type="number" min="0" value="${p.stock}" required></label><label>Sizes <small>Separate with commas</small><input name="sizes" value="${esc(sizes)}"></label><label>Colours <small>Separate with commas</small><input name="colours" value="${esc(colours)}"></label><label>Status<select name="status"><option value="active" ${p.status === "active" ? "selected" : ""}>Active</option><option value="draft" ${p.status === "draft" ? "selected" : ""}>Draft</option><option value="archived" ${p.status === "archived" ? "selected" : ""}>Archived</option></select></label><label>Upload more images <small>Select up to 16</small><input name="images" type="file" multiple accept="image/jpeg,image/png,image/webp,image/avif"></label>${images ? `<div class="full edit-product-images">${images}</div>` : ""}<label class="full">Short description<textarea name="short_description" maxlength="300">${esc(p.short_description || "")}</textarea></label><label class="full">Full description<textarea name="description">${esc(p.description || "")}</textarea></label><label class="full">SEO title<input name="seo_title" value="${esc(p.seo_title || "")}" maxlength="190"></label><label class="full">SEO description<textarea name="seo_description" maxlength="300">${esc(p.seo_description || "")}</textarea></label><label><input name="is_featured" type="checkbox" ${p.is_featured ? "checked" : ""}> Feature on homepage</label><label><input name="is_new" type="checkbox" ${p.is_new ? "checked" : ""}> Mark as new</label></div><div class="form-actions"><button class="btn primary">Save all changes</button></div></form></div></main></div>`;
 }
 
@@ -1010,9 +1040,10 @@ document.addEventListener("submit", async (event) => {
     const sizes = String(fd.get("sizes") || "").split(",").map((x) => x.trim()).filter(Boolean), colours = String(fd.get("colours") || "").split(",").map((x) => x.trim()).filter(Boolean);
     const variants = (sizes.length ? sizes : [""]).flatMap((size) => (colours.length ? colours : [""]).map((colour) => ({ size, colour })));
     await request(`/admin/products/${form.dataset.productId}/variants`, { method:"PUT", body:JSON.stringify({ variants }) });
-    const images = new FormData(); [...fd.getAll("images")].filter((file) => file.size).forEach((file) => images.append("images", file)); images.append("alt_text", fd.get("name"));
+    const selection=approvedImages(fd.getAll("images")); const images = new FormData(); selection.accepted.forEach((file) => images.append("images", file)); images.append("alt_text", fd.get("name"));
     if ([...images.keys()].some((key) => key === "images")) await request(`/admin/products/${form.dataset.productId}/images`, { method:"POST", body:images });
-    toast("All product details saved."); go("/admin/products");
+    await Promise.all([...window.__deletedProductImages].map((imageId)=>request(`/admin/products/${form.dataset.productId}/images/${imageId}`,{method:"DELETE"})));
+    toast(selection.rejected.length?`Changes saved. ${selection.rejected.join("; ")}. Other images uploaded successfully.`:"All product details saved.",selection.rejected.length?"error":"success"); setTimeout(()=>go("/admin/products"),selection.rejected.length?1400:0);
   } catch (error) { toast(error.message,"error"); button.disabled=false; button.textContent="Save all changes"; }
 });
 
@@ -1020,16 +1051,20 @@ document.addEventListener("submit", async (event) => {
   const form = event.target;
   if (!form.matches("form[data-category-edit]")) return;
   event.preventDefault(); event.stopImmediatePropagation();
-  const button=form.querySelector("button"), body=Object.fromEntries(new FormData(form));
+  const button=form.querySelector("button"), formData=new FormData(form), body=Object.fromEntries(formData);delete body.category_image;
   body.is_active=form.querySelector('[name="is_active"]').checked; button.disabled=true; button.innerHTML=`${icon("spinner")} Saving…`;
-  try { await request(`/admin/categories/${form.dataset.categoryEdit}`,{method:"PATCH",body:JSON.stringify(body)}); toast("Category saved."); render(); }
+  try { await request(`/admin/categories/${form.dataset.categoryEdit}`,{method:"PATCH",body:JSON.stringify(body)});if(form.__removeCategoryImage)await request(`/admin/categories/${form.dataset.categoryEdit}/image`,{method:"DELETE"});const selection=approvedImages(formData.getAll("category_image"));if(selection.accepted[0]){const imageData=new FormData();imageData.append("image",selection.accepted[0]);await request(`/admin/categories/${form.dataset.categoryEdit}/image`,{method:"POST",body:imageData});}toast(selection.rejected.length?`Category saved. ${selection.rejected.join("; ")}.`:"Category saved.",selection.rejected.length?"error":"success");render(); }
   catch(error){ toast(error.message,"error"); button.disabled=false; button.textContent="Save category"; }
 }, true);
 
 document.addEventListener("click", (event) => {
   const modal=document.querySelector("[data-category-modal]");
+  const removeProductImage=event.target.closest("[data-remove-product-image]");
+  if(removeProductImage){const card=removeProductImage.closest("[data-product-image-card]"),imageId=+removeProductImage.dataset.removeProductImage;if(window.__deletedProductImages.has(imageId)){window.__deletedProductImages.delete(imageId);card.classList.remove("pending-removal");removeProductImage.innerHTML=icon("xmark");removeProductImage.setAttribute("aria-label","Remove image");}else{window.__deletedProductImages.add(imageId);card.classList.add("pending-removal");removeProductImage.innerHTML=icon("rotate-left");removeProductImage.setAttribute("aria-label","Undo image removal");}return;}
   const edit=event.target.closest("[data-edit-category]");
-  if(edit&&modal){const category=(window.__adminCategories||[]).find((item)=>+item.id===+edit.dataset.editCategory),form=modal.querySelector("form");if(!category)return;form.dataset.categoryEdit=category.id;["name","slug","sort_order","description","seo_title","seo_description"].forEach((name)=>{form.elements[name].value=category[name]??"";});form.elements.is_active.checked=!!category.is_active;modal.hidden=false;document.body.classList.add("modal-open");return;}
+  if(edit&&modal){const category=(window.__adminCategories||[]).find((item)=>+item.id===+edit.dataset.editCategory),form=modal.querySelector("form");if(!category)return;form.dataset.categoryEdit=category.id;form.__removeCategoryImage=false;["name","slug","sort_order","description","seo_title","seo_description"].forEach((name)=>{form.elements[name].value=category[name]??"";});form.elements.is_active.checked=!!category.is_active;let imageEditor=form.querySelector(".category-image-editor");if(!imageEditor){imageEditor=document.createElement("div");imageEditor.className="category-image-editor full";form.querySelector(".form-grid").appendChild(imageEditor);}imageEditor.innerHTML=`<b>Category image</b><div class="category-image-row">${category.image_path?`<span class="editable-image"><img src="${asset(category.image_path)}" alt="${esc(category.name)}"><button type="button" data-remove-category-image aria-label="Remove category image">${icon("xmark")}</button></span>`:'<span class="category-no-image">No image uploaded</span>'}<label>Upload replacement <small>Maximum 2 MB</small><input name="category_image" type="file" accept="image/jpeg,image/png,image/webp,image/avif"></label></div>`;modal.hidden=false;document.body.classList.add("modal-open");return;}
+  const removeCategoryImage=event.target.closest("[data-remove-category-image]");
+  if(removeCategoryImage){const form=removeCategoryImage.closest("form");form.__removeCategoryImage=!form.__removeCategoryImage;removeCategoryImage.closest(".editable-image").classList.toggle("pending-removal",form.__removeCategoryImage);removeCategoryImage.innerHTML=icon(form.__removeCategoryImage?"rotate-left":"xmark");return;}
   if(event.target.closest("[data-close-category]")&&modal){modal.hidden=true;document.body.classList.remove("modal-open");}
 });
 
@@ -1044,9 +1079,9 @@ document.addEventListener("submit", async (event) => {
     const values=(name)=>[...new Set(String(fd.get(name)||"").split(",").map((value)=>value.trim()).filter(Boolean))];
     const sizes=values("sizes"), colours=values("colours"), variants=(sizes.length?sizes:[""]).flatMap((size)=>(colours.length?colours:[""]).map((colour)=>({size,colour})));
     await request(`/admin/products/${saved.id}/variants`,{method:"POST",body:JSON.stringify({variants})});
-    const images=new FormData(); [...fd.getAll("images")].filter((file)=>file.size).forEach((file)=>images.append("images",file)); images.append("alt_text",fd.get("name"));
+    const selection=approvedImages(fd.getAll("images")); const images=new FormData(); selection.accepted.forEach((file)=>images.append("images",file)); images.append("alt_text",fd.get("name"));
     if([...images.keys()].some((key)=>key==="images"))await request(`/admin/products/${saved.id}/images`,{method:"POST",body:images});
-    toast("Product and options created."); go("/admin/products");
+    toast(selection.rejected.length?`Product saved. ${selection.rejected.join("; ")}. Other images uploaded successfully.`:"Product and options created.",selection.rejected.length?"error":"success"); setTimeout(()=>go("/admin/products"),selection.rejected.length?1400:0);
   } catch(error){toast(error.message,"error");button.disabled=false;button.textContent="Save product and options";}
 }, true);
 

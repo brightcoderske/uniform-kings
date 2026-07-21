@@ -67,3 +67,9 @@
   .storefront-card .card-cart{width:25px!important;height:25px!important}
   .storefront-card .pill{top:6px!important;left:6px!important;padding:4px 6px!important;font-size:7px!important}
 }
+
+/* Seamless, continuously looping product galleries. */
+.storefront-card .card-image-track{position:absolute!important;inset:0!important;overflow:hidden!important;background:#eef1f4!important}
+.storefront-card .card-image-track img{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;max-width:none!important;padding:0!important;object-fit:cover!important;object-position:center!important;mix-blend-mode:normal!important;opacity:0;transform:none!important;transition:opacity .55s ease!important}
+.storefront-card .card-image-track img.is-active{z-index:1;opacity:1}
+@media(prefers-reduced-motion:reduce){.storefront-card .card-image-track img{transition:none!important}}

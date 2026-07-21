@@ -9,8 +9,8 @@ import { rateLimit } from "express-rate-limit";
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import { nanoid } from "nanoid";
-import { mkdir } from "node:fs/promises";
-import { extname } from "node:path";
+import { mkdir, unlink } from "node:fs/promises";
+import { basename, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 import PDFDocument from "pdfkit";
@@ -100,7 +100,7 @@ const storage = multer.diskStorage({
   }),
   upload = multer({
     storage,
-    limits: { fileSize: 5 * 1024 * 1024, files: 16 },
+    limits: { fileSize: 2 * 1024 * 1024, files: 16 },
     fileFilter: (req, f, cb) =>
       cb(
         null,
@@ -109,6 +109,10 @@ const storage = multer.diskStorage({
         ),
       ),
   });
+const removeUploadedFile = async (imagePath) => {
+  if (!String(imagePath || "").startsWith("/uploads/")) return;
+  try { await unlink(join(uploadsPath, basename(imagePath))); } catch (error) { if (error.code !== "ENOENT") console.error("Could not remove uploaded image", error); }
+};
 app.get("/api/health", async (req, res) => {
   await one("SELECT 1 ok");
   res.json({ status: "ok" });
@@ -503,6 +507,12 @@ app.post("/api/admin/categories", staff, async (req, res, next) => {
 app.patch("/api/admin/categories/:id", staff, async (req, res, next) => {
   try { const b=req.body; if(String(b.name||"").trim().length<2)return res.status(422).json({error:"Enter a category name."}); await rows(`UPDATE categories SET name=?,slug=?,description=?,seo_title=?,seo_description=?,is_active=?,sort_order=? WHERE id=?`, [b.name,slugify(b.slug||b.name),b.description||null,b.seo_title||null,b.seo_description||null,b.is_active?1:0,+b.sort_order||0,+req.params.id]); ok(res,true); } catch(e){next(e);}
 });
+app.post("/api/admin/categories/:id/image", staff, upload.single("image"), async (req,res,next)=>{
+  try{if(!req.file)return res.status(422).json({error:"Choose a JPG, PNG, WebP or AVIF image under 2 MB."});const category=await one("SELECT image_path FROM categories WHERE id=?",[+req.params.id]);if(!category)return res.status(404).json({error:"Category not found."});const imagePath=`/uploads/${req.file.filename}`;await rows("UPDATE categories SET image_path=? WHERE id=?",[imagePath,+req.params.id]);await removeUploadedFile(category.image_path);ok(res,{image_path:imagePath});}catch(error){next(error);}
+});
+app.delete("/api/admin/categories/:id/image",staff,async(req,res,next)=>{
+  try{const category=await one("SELECT image_path FROM categories WHERE id=?",[+req.params.id]);if(!category)return res.status(404).json({error:"Category not found."});await rows("UPDATE categories SET image_path=NULL WHERE id=?",[+req.params.id]);await removeUploadedFile(category.image_path);ok(res,true);}catch(error){next(error);}
+});
 app.get("/api/admin/schools", staff, async (req, res, next) => {
   try { ok(res, await rows(`SELECT * FROM schools ORDER BY name`)); } catch (e) { next(e); }
 });
@@ -577,6 +587,9 @@ app.post(
     }
   },
 );
+app.delete("/api/admin/products/:id/images/:imageId", staff, async (req,res,next)=>{
+  try{const image=await one("SELECT image_path FROM product_images WHERE id=? AND product_id=?",[+req.params.imageId,+req.params.id]);if(!image)return res.status(404).json({error:"Product image not found."});await rows("DELETE FROM product_images WHERE id=? AND product_id=?",[+req.params.imageId,+req.params.id]);await removeUploadedFile(image.image_path);ok(res,true);}catch(error){next(error);}
+});
 app.post("/api/admin/products/:id/variants", staff, async (req, res, next) => {
   try {
     const b = req.body;
@@ -841,6 +854,7 @@ app.get("/api/seo/sitemap.xml", async (_req, res, next) => {
 app.use((req, res) => res.status(404).json({ error: "API route not found" }));
 app.use((err, req, res, next) => {
   console.error(err);
+  if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") return res.status(413).json({ error:"That image is larger than 2 MB. Smaller valid images can still be uploaded separately." });
   res
     .status(err.code === "ER_DUP_ENTRY" ? 409 : 500)
     .json({
