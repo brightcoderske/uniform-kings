@@ -2,6 +2,10 @@ body{background:#fffaf0}.top,.nav,main,footer{background-color:inherit}.landing-
 
 /* Compact shopping and admin mobile navigation. */
 .admin-scrim{display:none}
+.admin-side>a:not(.admin-brand){color:#d7e1f0!important}
+.admin-side>a:not(.admin-brand) span,.admin-side>a:not(.admin-brand) b{color:inherit!important}
+.admin-side>a.active,.admin-side>a:hover{color:#fff!important}
+.admin-side>small{color:#8294af!important}
 .mobile-trust a{color:inherit;font-weight:700;text-decoration:none}
 .mobile-trust a:hover{color:var(--gold)}
 .shop-intro{align-items:center!important}
