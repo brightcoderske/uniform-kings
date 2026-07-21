@@ -37,6 +37,7 @@ try { cachedConfig = JSON.parse(localStorage.getItem("uk-config-cache") || "{}")
 let me = null,
   config = cachedConfig,
   initialHomeRequest = location.pathname === "/" ? request("/catalog/home") : null;
+let pageLoadRetries=0, pageLoadRetryTimer;
 const sessionBootstrap = Promise.all([request("/auth/me"), request("/config")]);
 const protectedStartup = location.pathname.startsWith("/admin") || ["/account", "/checkout"].includes(location.pathname);
 if (protectedStartup) {
@@ -155,6 +156,7 @@ function recoveryPage(reset = false) {
 }
 
 async function render() {
+  clearTimeout(pageLoadRetryTimer);
   window.scrollTo(0, 0);
   let path = location.pathname;
   if (me && me.role !== "customer" && !path.startsWith("/admin")) { history.replaceState({}, "", "/admin"); path = "/admin"; }
@@ -193,12 +195,13 @@ async function render() {
     enhanceInputs();
     if (location.hash) requestAnimationFrame(() => document.querySelector(location.hash)?.scrollIntoView({ behavior:"smooth", block:"start" }));
     if (path === "/") startHeroSlides();
+    pageLoadRetries=0;
     if (path === "/admin" && document.querySelector("#sales-chart")) {
       const d = window.__dashboard;
       const { Chart } = await import("chart.js/auto");
       new Chart(document.querySelector("#sales-chart"), { type: "line", data: { labels: d.sales.map((x) => new Date(x.day).toLocaleDateString("en-KE", { month: "short", day: "numeric" })), datasets: [{ data: d.sales.map((x) => x.total), borderColor: "#c9972d", backgroundColor: "rgba(201,151,45,.12)", fill: true, tension: .35 }] }, options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true }, x: { grid: { display: false } } }, responsive: true, maintainAspectRatio: false } });
     }
-  } catch (e) { if (path.startsWith("/admin") && app.querySelector(".admin-shell")) toast("Store data is taking longer to load. Please try again shortly.", "error"); else app.innerHTML = `${header()}<main class="not-found"><h1>We are still loading this page</h1><p>The connection is taking longer than expected.</p><button class="btn primary" onclick="location.reload()">Try again</button></main>${footer()}`; }
+  } catch (e) { console.error("Page data failed to load",e); if (path.startsWith("/admin") && app.querySelector(".admin-shell")) toast(import.meta.env.DEV ? `Could not load: ${e.message}` : "Store data could not load. Please try again.", "error"); else if(pageLoadRetries<2){pageLoadRetries++;app.innerHTML=`<main class="boot"><img src="/logo.jpeg" alt="Uniform Kings"><i class="fa-solid fa-spinner fa-spin"></i><b>Preparing Uniform Kings…</b></main>`;pageLoadRetryTimer=setTimeout(()=>render(),1000*pageLoadRetries);}else app.innerHTML=`${header()}<main class="not-found"><h1>Store temporarily unavailable</h1><p>We could not reach the catalogue service.</p><button class="btn primary" data-page-retry>Retry now</button></main>${footer()}`; }
   if(location.pathname==="/admin/walkins"&&window.__walkinProducts){const list=document.querySelector(".pos-product-list");if(list&&!document.querySelector("[data-pos-search]")){list.insertAdjacentHTML("beforebegin",`<label class="pos-search">${icon("magnifying-glass")}<input data-pos-search placeholder="Search product, category or school" autocomplete="off"><small data-pos-count>${window.__walkinProducts.length} available products</small></label>`);list.querySelectorAll("[data-pos-product]").forEach((button,index)=>{const product=window.__walkinProducts[index];button.dataset.searchText=[product.name,product.category_name,product.school_name].filter(Boolean).join(" ").toLowerCase();button.insertAdjacentHTML("afterbegin",product.image_path?`<img src="${asset(product.image_path)}" alt="${esc(product.name)}">`:`<span class="pos-product-placeholder">${icon("shirt")}</span>`);});}}
 }
 
@@ -321,9 +324,10 @@ function productCard(product) {
 async function adminProducts() {
   const sp=new URLSearchParams(location.search);
   const [catalog,filters]=await Promise.all([request("/admin/products?"+new URLSearchParams([...sp,["paged","1"]])),request("/filters")]);
-  const products=catalog.items || [];
+  const pageData=Array.isArray(catalog)?{items:catalog.slice(0,25),total:catalog.length,page:1,per_page:25,pages:Math.max(1,Math.ceil(catalog.length/25))}:catalog;
+  const products=pageData.items || [];
   window.__adminProducts=products;
-  window.__adminProductPage={catalog,filters,sp};
+  window.__adminProductPage={catalog:pageData,filters,sp};
   return `<div class="admin-shell">${adminSide("products")}<main>${adminTop("Products")}<div class="admin-content"><div class="admin-heading"><div><h1>Products</h1><p>Manage products, images, prices, categories and stock options.</p></div><a class="btn primary" href="/admin/products/new">${icon("plus")} Add product</a></div><section class="data-card"><div class="data-head"><div><h3>Product catalogue</h3><small>${products.length} product${products.length === 1 ? "" : "s"}</small></div><label>${icon("magnifying-glass")}<input data-table-search placeholder="Search products"></label></div><div class="table-wrap"><table><thead><tr><th>Product</th><th>Category</th><th>Price</th><th>Stock</th><th>Status</th><th></th></tr></thead><tbody>${products.length ? products.map((p) => `<tr><td><b>${esc(p.name)}</b><small>${esc(p.school_name || "General catalogue")}</small></td><td>${esc(p.category_name || "—")}</td><td>${money(p.price)}</td><td><b>${p.stock}</b></td><td><span class="status ${p.status}">${esc(p.status)}</span></td><td><a class="table-edit" href="/admin/products/${p.id}/edit">${icon("pen")} Edit</a></td></tr>`).join("") : '<tr><td colspan="6"><div class="empty">No products yet.</div></td></tr>'}</tbody></table></div></section></div></main></div>`;
 }
 
@@ -1049,6 +1053,8 @@ document.addEventListener("submit", async (event) => {
 document.addEventListener("submit",(event)=>{const form=event.target;if(!form.matches("[data-admin-product-filter]"))return;event.preventDefault();const params=new URLSearchParams(new FormData(form));for(const [key,value] of [...params])if(!value)params.delete(key);go(`/admin/products${params.size?`?${params}`:""}`);},true);
 
 document.addEventListener("input",(event)=>{if(!event.target.matches("[data-pos-search]"))return;const query=event.target.value.trim().toLowerCase();let visible=0;document.querySelectorAll("[data-pos-product]").forEach((button)=>{const show=!query||button.dataset.searchText.includes(query);button.hidden=!show;if(show)visible++;});const count=document.querySelector("[data-pos-count]");if(count)count.textContent=`${visible} matching product${visible===1?"":"s"}`;});
+
+document.addEventListener("click",(event)=>{if(!event.target.closest("[data-page-retry]"))return;pageLoadRetries=0;app.innerHTML=`<main class="boot"><img src="/logo.jpeg" alt="Uniform Kings"><i class="fa-solid fa-spinner fa-spin"></i><b>Preparing Uniform Kings…</b></main>`;render();});
 
 document.addEventListener("submit", async (event) => {
   const form = event.target;

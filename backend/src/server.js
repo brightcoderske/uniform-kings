@@ -209,7 +209,7 @@ app.get("/api/products", async (req, res, next) => {
     const perPage = Math.min(50, Math.max(1, Number.parseInt(req.query.per_page, 10) || 25));
     if (paged) {
       const count = await one(`SELECT COUNT(*) total FROM products p LEFT JOIN categories c ON c.id=p.category_id LEFT JOIN schools s ON s.id=p.school_id WHERE ${w.join(" AND ")}`, p);
-      const items = await rows(`SELECT p.*,i.image_path,(SELECT GROUP_CONCAT(image_path ORDER BY sort_order,id SEPARATOR '|') FROM product_images WHERE product_id=p.id) image_paths,c.name category_name,s.name school_name FROM products p LEFT JOIN product_images i ON i.id=(SELECT MIN(id) FROM product_images WHERE product_id=p.id) LEFT JOIN categories c ON c.id=p.category_id LEFT JOIN schools s ON s.id=p.school_id WHERE ${w.join(" AND ")} ORDER BY p.is_featured DESC,p.created_at DESC LIMIT ? OFFSET ?`, [...p, perPage, (page-1)*perPage]);
+      const items = await rows(`SELECT p.*,i.image_path,(SELECT GROUP_CONCAT(image_path ORDER BY sort_order,id SEPARATOR '|') FROM product_images WHERE product_id=p.id) image_paths,c.name category_name,s.name school_name FROM products p LEFT JOIN product_images i ON i.id=(SELECT MIN(id) FROM product_images WHERE product_id=p.id) LEFT JOIN categories c ON c.id=p.category_id LEFT JOIN schools s ON s.id=p.school_id WHERE ${w.join(" AND ")} ORDER BY p.is_featured DESC,p.created_at DESC LIMIT ${perPage} OFFSET ${(page-1)*perPage}`, p);
       return ok(res, { items, total:Number(count.total), page, per_page:perPage, pages:Math.max(1,Math.ceil(Number(count.total)/perPage)) });
     }
     ok(
@@ -469,7 +469,7 @@ app.get("/api/admin/products", staff, async (req, res, next) => {
     if(category){where.push("c.slug=?");params.push(category);}
     if(["draft","active","archived"].includes(status)){where.push("p.status=?");params.push(status);}
     const clause=where.length?`WHERE ${where.join(" AND ")}`:"";
-    if(paged){const count=await one(`SELECT COUNT(*) total FROM products p LEFT JOIN categories c ON c.id=p.category_id LEFT JOIN schools s ON s.id=p.school_id ${clause}`,params);const items=await rows(`SELECT p.*,c.name category_name,s.name school_name,(SELECT image_path FROM product_images WHERE product_id=p.id ORDER BY sort_order,id LIMIT 1) image_path FROM products p LEFT JOIN categories c ON c.id=p.category_id LEFT JOIN schools s ON s.id=p.school_id ${clause} ORDER BY p.updated_at DESC LIMIT ? OFFSET ?`,[...params,perPage,(page-1)*perPage]);return ok(res,{items,total:Number(count.total),page,per_page:perPage,pages:Math.max(1,Math.ceil(Number(count.total)/perPage))});}
+    if(paged){const offset=(page-1)*perPage;const [count,items]=await Promise.all([one(`SELECT COUNT(*) total FROM products p LEFT JOIN categories c ON c.id=p.category_id LEFT JOIN schools s ON s.id=p.school_id ${clause}`,params),rows(`SELECT p.*,c.name category_name,s.name school_name,(SELECT image_path FROM product_images WHERE product_id=p.id ORDER BY sort_order,id LIMIT 1) image_path FROM products p LEFT JOIN categories c ON c.id=p.category_id LEFT JOIN schools s ON s.id=p.school_id ${clause} ORDER BY p.updated_at DESC LIMIT ${perPage} OFFSET ${offset}`,params)]);return ok(res,{items,total:Number(count.total),page,per_page:perPage,pages:Math.max(1,Math.ceil(Number(count.total)/perPage))});}
     ok(
       res,
       await rows(
