@@ -778,6 +778,38 @@ app.patch("/api/admin/checkout/:id", staff, async (req, res, next) => {
     c.release();
   }
 });
+app.get("/api/seo/merchant-feed.xml", async (_req, res, next) => {
+  try {
+    const website = String(process.env.FRONTEND_URL || "https://uniformkings.co.ke").split(",")[0].replace(/\/$/, "");
+    const api = String(process.env.API_URL || "https://api.uniformkings.co.ke").replace(/\/$/, "");
+    const xml = (value) => String(value ?? "").replace(/[<>&'\"]/g, (character) => ({ "<":"&lt;", ">":"&gt;", "&":"&amp;", "'":"&apos;", '\"':"&quot;" })[character]);
+    const products = await rows(`SELECT p.id,p.name,p.slug,p.short_description,p.description,p.price,p.stock,p.sku,c.name category_name,i.image_path FROM products p LEFT JOIN categories c ON c.id=p.category_id LEFT JOIN product_images i ON i.id=(SELECT MIN(id) FROM product_images WHERE product_id=p.id) WHERE p.status='active' AND i.image_path IS NOT NULL ORDER BY p.updated_at DESC`);
+    res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0"><channel><title>Uniform Kings Kenya</title><link>${xml(website)}</link><description>School uniforms, shoes, sportswear and professional uniforms in Kenya.</description>${products.map((product) => `<item><g:id>${xml(product.sku || product.id)}</g:id><g:title>${xml(product.name)}</g:title><g:description>${xml(product.short_description || product.description || `${product.name} from Uniform Kings Kenya.`)}</g:description><g:link>${xml(`${website}/product/${product.slug}`)}</g:link><g:image_link>${xml(`${api}${product.image_path}`)}</g:image_link><g:availability>${+product.stock > 0 ? "in_stock" : "out_of_stock"}</g:availability><g:price>${Number(product.price).toFixed(2)} KES</g:price><g:condition>new</g:condition><g:brand>Uniform Kings</g:brand><g:product_type>${xml(product.category_name || "Uniforms")}</g:product_type></item>`).join("")}</channel></rss>`);
+  } catch (error) { next(error); }
+});
+
+app.get("/api/seo/sitemap.xml", async (_req, res, next) => {
+  try {
+    const website = String(process.env.FRONTEND_URL || "https://uniformkings.co.ke").split(",")[0].replace(/\/$/, "");
+    const xml = (value) => String(value).replace(/[<>&'\"]/g, (character) => ({ "<":"&lt;", ">":"&gt;", "&":"&amp;", "'":"&apos;", '\"':"&quot;" })[character]);
+    const [products, categories] = await Promise.all([
+      rows("SELECT slug,updated_at FROM products WHERE status='active' ORDER BY updated_at DESC"),
+      rows("SELECT slug,created_at AS updated_at FROM categories WHERE is_active=1 ORDER BY sort_order,name"),
+    ]);
+    const urls = [
+      ["/", new Date(), "daily", "1.0"],
+      ["/shop", new Date(), "daily", "0.9"],
+      ["/about", new Date(), "monthly", "0.6"],
+      ["/delivery", new Date(), "monthly", "0.5"],
+      ["/returns", new Date(), "monthly", "0.5"],
+      ["/privacy", new Date(), "yearly", "0.3"],
+      ...categories.map((category) => [`/shop?category=${encodeURIComponent(category.slug)}`, category.updated_at, "weekly", "0.8"]),
+      ...products.map((product) => [`/product/${encodeURIComponent(product.slug)}`, product.updated_at, "weekly", "0.9"]),
+    ];
+    res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.map(([path,date,frequency,priority]) => `<url><loc>${xml(website + path)}</loc><lastmod>${new Date(date || Date.now()).toISOString()}</lastmod><changefreq>${frequency}</changefreq><priority>${priority}</priority></url>`).join("")}</urlset>`);
+  } catch (error) { next(error); }
+});
+
 app.use((req, res) => res.status(404).json({ error: "API route not found" }));
 app.use((err, req, res, next) => {
   console.error(err);

@@ -28,7 +28,8 @@ const app = document.querySelector("#app"),
   },
   go = (p) => {
     history.pushState({}, "", p);
-    render();
+    document.body.classList.add("route-loading");
+    Promise.resolve(render()).finally(() => document.body.classList.remove("route-loading"));
   };
 let me = null,
   config = {},
@@ -40,7 +41,7 @@ const icon = (n) => `<i class="fa-solid fa-${n}"></i>`;
 function legacyHeader() {
   return `<header class="top"><div class="mini"><div>Quality uniforms. Confident futures.</div><div><a href="tel:${esc(config.contact_phone || "")}">Help & support</a></div></div><div class="head wrap"><button class="menu" aria-label="Open menu">${icon("bars")}</button><a class="brand" href="/"><img src="/logo.jpeg" alt="Uniform Kings"><span><b>UNIFORM</b><em>KINGS</em></span></a><form class="search" action="/shop"><input name="q" placeholder="Search uniforms, school or product code" aria-label="Search"><button>${icon("magnifying-glass")}<span>Search</span></button></form><nav class="actions"><a href="${me ? (me.role === "customer" ? "/account" : "/admin") : "/login"}">${icon("user")}<small>${me ? esc(me.name.split(" ")[0]) : "Sign in"}</small></a><a href="/cart">${icon("bag-shopping")}<small>Cart</small><b class="cart-count">${countCart()}</b></a></nav></div><nav class="nav"><div class="wrap"><a href="/">Home</a><a href="/shop">Shop all</a><a href="/shop?category=school-uniforms">School uniforms</a><a href="/shop?category=corporate-uniforms">Corporate</a><a href="/shop?category=sportswear">Sportswear</a><a href="/shop?category=shoes">Shoes</a><a href="/shop?category=accessories">Accessories</a><a href="/shop">Offers</a></div></nav></header><aside class="drawer"><button class="drawer-close">${icon("xmark")}</button><a href="/">Home</a><a href="/shop">Shop all</a><a href="/shop">Categories</a><a href="/shop">Find a school</a><a href="${me ? "/account" : "/login"}">My account</a><a href="/cart">My cart</a></aside><div class="scrim"></div>`;
 }
-function footer() {
+function legacyFooter() {
   return `<footer><div class="wrap foot"><div class="foot-brand"><a class="brand" href="/"><img src="/logo.jpeg" alt=""><span><b>UNIFORM</b><em>KINGS</em></span></a><p>Quality schoolwear and professional uniforms, made easier to find and order.</p></div><div><h4>Shop</h4><a href="/shop">School uniforms</a><a href="/shop">Corporate uniforms</a><a href="/shop">Sportswear</a><a href="/shop">Offers</a></div><div><h4>Customer care</h4><a href="/account">My orders</a><a href="/shop">Size guide</a><a href="/">Delivery information</a><a href="/">Returns & exchanges</a></div><div><h4>Uniform Kings</h4><a href="/">About us</a><a href="/">School partnerships</a><a href="/">Bulk orders</a><a href="/">Contact us</a></div></div><div class="copyright wrap"><span>© ${new Date().getFullYear()} Uniform Kings. All rights reserved.</span><span>Secure shopping • Customer privacy protected</span></div></footer><nav class="bottom"><a href="/">${icon("house")}<span>Home</span></a><a href="/shop">${icon("border-all")}<span>Shop</span></a><a href="/shop">${icon("school")}<span>Schools</span></a><a href="/cart">${icon("bag-shopping")}<span>Cart</span><b class="cart-count">${countCart()}</b></a></nav>`;
 }
 const legacyProductCard = (p) =>
@@ -56,6 +57,9 @@ async function shop() {
       request("/filters"),
     ]);
   const offersOnly = sp.get("offer") === "1";
+  const selectedCategory = filters.categories.find((item) => item.slug === sp.get("category"));
+  const shopHeading = offersOnly ? "Uniform Offers in Kenya" : selectedCategory ? `${selectedCategory.name} in Kenya` : "School Uniforms, Shoes & Workwear in Kenya";
+  setSeo({ title:`${shopHeading} | Uniform Kings`, description:`Shop ${selectedCategory?.name || "school uniforms, school shoes, sweaters, shirts, trousers, sportswear and corporate uniforms"} online from Uniform Kings with convenient ordering and delivery in Kenya.`, path:location.pathname + location.search });
   return `${header()}<main class="wrap shop-page"><div class="crumb">Home / ${offersOnly ? "Offers" : "Shop"}</div><div class="shop-title"><div><span class="eyebrow">Uniform Kings catalogue</span><h1>${offersOnly ? "Current offers" : "Shop uniforms"}</h1><p>${products.length} product${products.length === 1 ? "" : "s"} available</p></div><button class="filter-toggle">${icon("sliders")} Filters</button></div><div class="shop-grid"><aside class="filters"><h3>Filter products</h3><form action="/shop">${offersOnly ? '<input type="hidden" name="offer" value="1">' : ""}<label>Search<input name="q" value="${esc(sp.get("q") || "")}" placeholder="Product or school"></label><label>Category<select name="category"><option value="">All categories</option>${filters.categories.map((x) => `<option value="${x.slug}" ${sp.get("category") === x.slug ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label><label>School<select name="school"><option value="">All schools</option>${filters.schools.map((x) => `<option value="${x.slug}" ${sp.get("school") === x.slug ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label><button class="btn primary">Apply filters</button><a href="${offersOnly ? "/shop?offer=1" : "/shop"}">Clear filters</a></form></aside><div class="products">${products.length ? products.map(productCard).join("") : `<div class="empty wide">${offersOnly ? "No offers are active right now." : "No published products match these filters."}</div>`}</div></div></main>${footer()}`;
 }
 async function legacyProduct(slug) {
@@ -131,6 +135,8 @@ async function render() {
   window.scrollTo(0, 0);
   let path = location.pathname;
   if (me && me.role !== "customer" && !path.startsWith("/admin")) { history.replaceState({}, "", "/admin"); path = "/admin"; }
+  const privatePage = path.startsWith("/admin") || ["/account", "/cart", "/checkout", "/login", "/register", "/forgot-password", "/reset-password"].includes(path);
+  setSeo({ title:"Uniform Kings Kenya | Quality Uniforms", description:"Shop school uniforms, school shoes, sportswear and professional uniforms from Uniform Kings Kenya.", path, robots:privatePage ? "noindex,nofollow" : undefined });
   try {
     if (path === "/") app.innerHTML = await managedHome();
     else if (path === "/shop") app.innerHTML = await shop();
@@ -141,6 +147,7 @@ async function render() {
     else if (path === "/register") app.innerHTML = authPage("register");
     else if (path === "/forgot-password") app.innerHTML = recoveryPage();
     else if (path === "/reset-password") app.innerHTML = recoveryPage(true);
+    else if (["/about", "/delivery", "/returns", "/privacy"].includes(path)) app.innerHTML = informationPage(path.slice(1));
     else if (path === "/account") app.innerHTML = await account();
     else if (path === "/admin") app.innerHTML = await adminDashboard();
     else if (path === "/admin/products") app.innerHTML = await adminProducts();
@@ -161,6 +168,7 @@ async function render() {
       app.insertAdjacentHTML("beforeend", chatWidget());
     bind();
     enhanceInputs();
+    if (location.hash) requestAnimationFrame(() => document.querySelector(location.hash)?.scrollIntoView({ behavior:"smooth", block:"start" }));
     if (path === "/") startHeroSlides();
     if (path === "/admin" && document.querySelector("#sales-chart")) {
       const d = window.__dashboard;
@@ -196,6 +204,8 @@ document.addEventListener("click", async (event) => {
   if (option) { option.classList.toggle("selected"); updateSelectedOptions(); return; }
   const helper = event.target.closest(".helper-toggle");
   if (helper) { document.querySelector("#product-helper").classList.toggle("open"); return; }
+  const helperQuestion = event.target.closest("[data-helper-question]");
+  if (helperQuestion) { const form=document.querySelector("#helper-search"); form.q.value=helperQuestion.dataset.helperQuestion; form.requestSubmit(); return; }
   if (event.target.closest("[data-close-helper]")) { document.querySelector("#product-helper")?.classList.remove("open"); return; }
 });
 
@@ -253,7 +263,7 @@ document.addEventListener("submit", async (event) => {
   if (event.target.id !== "helper-search") return;
   event.preventDefault(); event.stopImmediatePropagation();
   const query=String(new FormData(event.target).get("q")||"").trim(), lower=query.toLowerCase(), target=event.target.closest(".helper-panel").querySelector(".helper-results");
-  const answers = lower.includes("deliver") ? "We offer the delivery or pickup choices shown at checkout. Choose the option that suits you before placing your order." : lower.includes("return") || lower.includes("exchange") ? "For a size exchange, contact Uniform Kings support promptly with your order number and the item in its original condition." : lower.includes("size") ? "Open a product, choose its size options, and add one or more combinations to your cart. Unavailable combinations are not added." : lower.includes("school") ? "Search using your school name from the search bar or choose Find your school on the homepage." : "";
+  const answers = lower.includes("deliver") ? "Available delivery, school delivery, pickup and collection choices appear at checkout. The available choice can depend on your destination." : lower.includes("return") || lower.includes("exchange") ? "Contact Uniform Kings promptly with your order number. Keep the item unused, clean and in its original condition while the exchange request is reviewed." : lower.includes("size") ? "Open a product and tap its available size and colour boxes. You can select several combinations and each enters the cart separately." : lower.includes("school") ? "Type the school name in the main search. If its uniforms are active, the matching products will be displayed." : lower.includes("pay") || lower.includes("mpesa") ? "Checkout displays only the payment and ordering methods currently enabled by Uniform Kings. Select a method to begin that process." : lower.includes("order") ? "Sign in and open My orders to review your online orders. For further help, contact customer care with the order number." : lower.includes("contact") || lower.includes("phone") || lower.includes("whatsapp") ? `You can contact Uniform Kings through the Contact us link in the footer${config.whatsapp_number ? ` or WhatsApp ${config.whatsapp_number}` : ""}.` : lower.includes("quality") ? "Uniform Kings focuses on practical, clearly described uniform products with real size, colour and stock choices managed by the store." : "";
   if (answers) { target.innerHTML=`<div class="helper-answer">${esc(answers)}</div>`; return; }
   try { const result=await request(`/products?q=${encodeURIComponent(query)}`); target.innerHTML=result.length ? result.slice(0,5).map((p)=>`<a href="/product/${p.slug}">${p.image_path?`<img src="${asset(p.image_path)}" alt="">`:""}<span>${esc(p.name)}<small>${money(p.price)}</small></span></a>`).join("") : '<small>Try asking about delivery, sizes, exchanges, schools or a product name.</small>'; } catch(error){ target.innerHTML='<small>I could not reach the catalogue just now.</small>'; }
 });
@@ -296,6 +306,16 @@ async function managedHome() {
   const homeRequest = initialHomeRequest;
   initialHomeRequest = null;
   const d = await (homeRequest || request("/catalog/home")), slides = d.heroImages || [];
+  setSeo({
+    title: "Uniform Kings Kenya | School Uniforms, Shoes & Workwear",
+    description: "Shop quality school uniforms, school shoes, sweaters, shirts, trousers, tracksuits, sportswear and corporate uniforms with delivery in Kenya.",
+    path: "/",
+    image: slides[0]?.image_path ? asset(slides[0].image_path) : "/logo.jpeg",
+    schema: { "@context":"https://schema.org", "@graph":[
+      { "@type":"Organization", "@id":`${SITE_URL}/#organization`, name:"Uniform Kings", url:SITE_URL, logo:`${SITE_URL}/logo.jpeg`, contactPoint:numberForSchema() },
+      { "@type":"WebSite", "@id":`${SITE_URL}/#website`, url:SITE_URL, name:"Uniform Kings", potentialAction:{ "@type":"SearchAction", target:`${SITE_URL}/shop?q={search_term_string}`, "query-input":"required name=search_term_string" } }
+    ] },
+  });
   const heroSlides = slides.length ? slides.map((slide, index) => `<div class="hero-slide ${index === 0 ? "show" : ""}"><picture>${slide.mobile_image_path ? `<source media="(max-width: 760px)" srcset="${asset(slide.mobile_image_path)}">` : ""}<img ${index ? 'loading="lazy"' : 'fetchpriority="high"'} src="${asset(slide.image_path)}" alt="${esc(slide.alt_text || "Uniform Kings")}"></picture></div>`).join("") : '<div class="hero-slide show hero-empty"></div>';
   const categorySections = d.categories.map((category) => ({ ...category, products:d.products.filter((product) => +product.category_id === +category.id) })).filter((category) => category.products.length).map((category) => `<section class="home-category"><div class="wrap"><div class="category-row-head"><h2>${esc(category.name)}</h2><a href="/shop?category=${esc(category.slug)}">Shop ${esc(category.name)} ${icon("arrow-right")}</a></div><div class="category-product-grid">${category.products.slice(0,50).map(productCard).join("")}</div></div></section>`).join("");
   return `${header()}<main><section class="landing-hero managed-hero"><div class="hero-slides">${heroSlides}</div><div class="landing-overlay wrap hero-centred"><div class="landing-brand hero-logo-only"><img src="/logo.jpeg" alt="Uniform Kings"></div><h1><i>One reliable uniform shop.</i></h1><p>Quality schoolwear, shoes, sportswear and professional uniforms—easy to find, size and order.</p><div class="hero-buttons"><a class="btn primary" href="/shop">Shop uniforms ${icon("arrow-right")}</a><a class="btn hero-outline" href="/shop">Find your school ${icon("school")}</a></div></div><div class="hero-dots">${slides.slice(0, 5).map((_, index) => `<button aria-label="Show image ${index + 1}" class="${index === 0 ? "active" : ""}" data-hero-dot="${index}"></button>`).join("")}</div></section><section class="mobile-trust wrap"><span>${icon("shield-halved")} Quality</span><span>${icon("truck-fast")} Delivery</span><span>${icon("rotate-left")} Exchanges</span></section><section class="shop-intro wrap"><div><span class="eyebrow">Explore the catalogue</span><h2>Shop every collection</h2><p>Browse our active uniform ranges below. Scroll across each collection to see more.</p></div><a class="btn ghost" href="/shop">View all products</a></section>${categorySections || '<section class="wrap"><div class="empty wide">Products will appear here when active categories are stocked.</div></section>'}</main>${footer()}`;
@@ -520,6 +540,10 @@ function bind() {
   if (collectionLabel) collectionLabel.textContent = "Explore the collection";
   const collectionLink = document.querySelector(".shop-intro > a");
   if (collectionLink) collectionLink.innerHTML = `View all collections ${icon("arrow-right")}`;
+  const trustTargets = ["/about#quality", "/delivery", "/returns"];
+  document.querySelectorAll(".mobile-trust > span").forEach((item, index) => {
+    const link = document.createElement("a"); link.href = trustTargets[index]; link.innerHTML = item.innerHTML; item.replaceWith(link);
+  });
   document.querySelectorAll('a[href^="/"]').forEach(
     (a) =>
       (a.onclick = (e) => {
@@ -587,6 +611,10 @@ function bind() {
     .querySelector("#auth-form")
     ?.addEventListener("submit", async (e) => {
       e.preventDefault();
+      const button = e.target.querySelector("button");
+      const original = button.innerHTML;
+      button.disabled = true;
+      button.innerHTML = `${icon("spinner")} ${location.pathname === "/register" ? "Creating account…" : "Signing in…"}`;
       const b = Object.fromEntries(new FormData(e.target));
       try {
         me = await request(
@@ -596,6 +624,8 @@ function bind() {
         go(me.role === "customer" ? "/account" : "/admin");
       } catch (x) {
         toast(x.message, "error");
+        button.disabled = false;
+        button.innerHTML = original;
       }
     });
   document.querySelector("#logout")?.addEventListener("click", async () => {
@@ -749,6 +779,50 @@ function header() {
   return `<header class="top"><div class="mini"><div>Quality uniforms. Confident futures.</div><div><a href="tel:${esc(config.contact_phone || "")}">Help & support</a></div></div><div class="head wrap"><button class="menu" aria-label="Open menu">${icon("bars")}</button><a class="brand" href="/"><img src="/logo.jpeg" alt="Uniform Kings"><span><b>UNIFORM KINGS</b><em>QUALITY UNIFORMS · PROUD FUTURES</em></span></a><form class="search" action="/shop"><input name="q" placeholder="Search uniforms or school" aria-label="Search"><button>${icon("magnifying-glass")}<span>Search</span></button></form><nav class="actions"><a href="${accountLink}">${icon("user")}<small>${me ? esc(me.name.split(" ")[0]) : "Sign in"}</small></a><a href="/cart">${icon("bag-shopping")}<small>Cart</small><b class="cart-count">${countCart()}</b></a></nav></div><nav class="nav"><div class="wrap"><a href="/">Home</a><a href="/shop">Shop all</a>${categoryLinks}<a href="/shop?offer=1">Offers</a></div></nav></header><aside class="drawer"><button class="drawer-close">${icon("xmark")}</button><a href="/">Home</a><a href="/shop">Shop all uniforms</a>${categoryLinks}<a href="/shop?offer=1">Offers</a><a href="/shop">Find a school</a>${me ? `<a href="${accountLink}">My account</a><a href="/account?section=orders">My orders</a><form id="drawer-logout"><button>Sign out</button></form>` : `<a href="/login">Sign in</a><a href="/register">Create account</a>`}<a href="/cart">My cart (${countCart()})</a></aside><div class="scrim"></div>`;
 }
 
+const SITE_URL = "https://uniformkings.co.ke";
+function numberForSchema() {
+  const telephone = String(config.contact_phone || config.whatsapp_number || "").trim();
+  return telephone ? { "@type":"ContactPoint", telephone, contactType:"customer service", areaServed:"KE", availableLanguage:["English","Swahili"] } : undefined;
+}
+function setSeo({ title, description, path = location.pathname + location.search, image = "/logo.jpeg", type = "website", schema = null, robots = "index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" }) {
+  document.title = title;
+  const absoluteImage = image.startsWith("http") ? image : `${SITE_URL}${image}`;
+  const canonicalUrl = `${SITE_URL}${path}`;
+  const meta = (selector, attribute, name, content) => {
+    let element = document.head.querySelector(selector);
+    if (!element) { element = document.createElement("meta"); element.setAttribute(attribute, name); document.head.append(element); }
+    element.content = content;
+  };
+  meta('meta[name="description"]', "name", "description", description);
+  meta('meta[name="robots"]', "name", "robots", robots);
+  [["og:title",title],["og:description",description],["og:url",canonicalUrl],["og:image",absoluteImage],["og:type",type],["og:site_name","Uniform Kings"],["og:locale","en_KE"],["twitter:card","summary_large_image"],["twitter:title",title],["twitter:description",description],["twitter:image",absoluteImage]].forEach(([name,content]) => meta(`meta[property="${name}"],meta[name="${name}"]`, name.startsWith("twitter:") ? "name" : "property", name, content));
+  let canonical = document.head.querySelector('link[rel="canonical"]');
+  if (!canonical) { canonical = document.createElement("link"); canonical.rel = "canonical"; document.head.append(canonical); }
+  canonical.href = canonicalUrl;
+  document.querySelector("#page-schema")?.remove();
+  if (schema) { const script=document.createElement("script"); script.id="page-schema"; script.type="application/ld+json"; script.textContent=JSON.stringify(schema); document.head.append(script); }
+}
+
+function footer() {
+  const number = String(config.whatsapp_number || config.contact_phone || "").replace(/\D/g, "");
+  const whatsapp = number ? `https://wa.me/${number}?text=${encodeURIComponent("Hello Uniform Kings, I need assistance.")}` : "/about#contact";
+  return `<footer><div class="wrap foot"><div class="foot-brand"><a class="brand" href="/"><img src="/logo.jpeg" alt="Uniform Kings logo"><span><b>UNIFORM KINGS</b><em>QUALITY UNIFORMS · PROUD FUTURES</em></span></a><p>Quality schoolwear, shoes, sportswear and professional uniforms, delivered across Kenya.</p></div><div><h4>Shop</h4><a href="/shop">All uniforms</a><a href="/shop?category=school-uniforms">School uniforms</a><a href="/shop?category=shoes">School shoes</a><a href="/shop?offer=1">Current offers</a></div><div><h4>Customer care</h4><a href="/delivery">Delivery information</a><a href="/returns">Returns & exchanges</a><a href="/privacy">Privacy policy</a><a href="${whatsapp}" ${number ? 'target="_blank" rel="noopener"' : ""}>Contact us</a></div><div><h4>Uniform Kings</h4><a href="/about">About us</a><a href="/about#why-us">Why choose us</a><a href="/about#quality">Our quality</a><a href="/about#contact">Customer support</a></div></div><div class="copyright wrap"><span>© ${new Date().getFullYear()} Uniform Kings. All rights reserved.</span><span>Secure shopping · Customer privacy protected</span></div></footer><nav class="bottom"><a href="/">${icon("house")}<span>Home</span></a><a href="/shop">${icon("border-all")}<span>Shop</span></a><a href="/shop">${icon("school")}<span>Schools</span></a><a href="/cart">${icon("bag-shopping")}<span>Cart</span><b class="cart-count">${countCart()}</b></a></nav>`;
+}
+
+function informationPage(page) {
+  const number = String(config.whatsapp_number || config.contact_phone || "").replace(/\D/g, "");
+  const contact = number ? `https://wa.me/${number}?text=${encodeURIComponent("Hello Uniform Kings, I need assistance.")}` : `mailto:${config.contact_email || "admin@uniformkings.co.ke"}`;
+  const pages = {
+    about: ["About Uniform Kings", "Quality uniforms for schools, teams and workplaces in Kenya.", `<section id="why-us"><h2>Why choose us</h2><p>We make it easier to find the right uniform, select available sizes and colours, and order using approved checkout options.</p></section><section id="quality"><h2>Quality you can rely on</h2><p>Our catalogue is managed around real products, clear options and practical uniform needs for school and professional life.</p></section><section id="contact"><h2>Customer care</h2><p>Need product, size, delivery or order assistance? Talk directly to the Uniform Kings team.</p><a class="btn primary" href="${contact}" target="_blank" rel="noopener">Chat with us ${icon("comment-dots")}</a></section>`],
+    delivery: ["Delivery information", "Uniform delivery and collection information for Uniform Kings customers across Kenya.", `<h2>Delivery and collection</h2><p>Available delivery, school delivery, pickup and collection choices are displayed during checkout. Availability can depend on the destination and the selected products.</p><h2>Before placing an order</h2><p>Confirm the customer phone number, delivery location, product sizes and colours. Our team may contact you when clarification is required.</p><a class="btn primary" href="${contact}" target="_blank" rel="noopener">Ask about delivery</a>`],
+    returns: ["Returns and exchanges", "Uniform Kings returns and size exchange guidance for uniforms, shoes and accessories.", `<h2>Returns and exchanges</h2><p>Contact our team promptly if an item is unsuitable or the selected size is not right. Keep products unused, clean and in their original condition while your request is reviewed.</p><h2>Personalised products</h2><p>Items that have been branded, embroidered, altered or otherwise personalised may not qualify for an ordinary exchange unless they have a confirmed fault.</p><a class="btn primary" href="${contact}" target="_blank" rel="noopener">Request assistance</a>`],
+    privacy: ["Privacy policy", "How Uniform Kings handles account, order, delivery and payment information.", `<h2>Information we use</h2><p>We use the information customers provide to operate accounts, prepare orders, arrange delivery, process enabled checkout methods and provide customer support.</p><h2>Security and sharing</h2><p>We limit access to operational information and do not sell customer information. Payment services may process the information required to complete a selected transaction.</p><h2>Your choices</h2><p>Contact us to ask about your account information or request appropriate corrections.</p><a class="btn primary" href="${contact}" target="_blank" rel="noopener">Contact customer care</a>`],
+  };
+  const [title,description,content] = pages[page];
+  setSeo({ title:`${title} | Uniform Kings Kenya`, description, path:`/${page}` });
+  return `${header()}<main class="wrap information-page"><div class="crumb">Home / ${title}</div><header><span class="eyebrow">Uniform Kings customer care</span><h1>${title}</h1><p>${description}</p></header><article>${content}</article></main>${footer()}${chatWidget()}`;
+}
+
 async function legacyNewHome() {
   const d = await request("/catalog/home");
   const hero = d.products.find((p) => p.image_path) || null;
@@ -756,12 +830,22 @@ async function legacyNewHome() {
   return `${header()}<main><section class="hero hero-photo" ${heroStyle}><div class="wrap hero-grid"><div class="hero-copy"><span class="eyebrow">Uniforms made simple</span><h1>Dress smart.<br><i>Learn confidently.</i></h1><p>Quality school, corporate and institutional uniforms in the correct colours, sizes and designs.</p><div class="hero-buttons"><a class="btn primary" href="/shop">Shop uniforms ${icon("arrow-right")}</a><a class="btn ghost" href="/shop">Find your school</a></div><div class="trust"><span>${icon("shield-halved")} Quality checked</span><span>${icon("truck-fast")} Countrywide delivery</span><span>${icon("rotate-left")} Easy exchanges</span></div></div><div class="hero-art"><div class="crest"><img src="/logo.jpeg" alt="Uniform Kings"></div>${hero ? `<a class="hero-product-promo" href="/product/${esc(hero.slug)}"><img src="${asset(hero.image_path)}" alt="${esc(hero.name)}"><span>Shop ${esc(hero.name)} ${icon("arrow-right")}</span></a>` : ""}</div></div></section><section class="school-finder wrap"><div><span class="eyebrow">Quick school finder</span><h2>Find the right uniform, faster.</h2></div><form action="/shop"><div>${icon("school")}<input name="q" placeholder="Type a school name"></div><button class="btn primary">Find uniforms</button></form></section><section class="section wrap"><div class="section-head"><div><span class="eyebrow">Browse the range</span><h2>Shop by category</h2></div><a href="/shop">View all ${icon("arrow-right")}</a></div><div class="categories">${d.categories.length ? d.categories.map((c, i) => `<a href="/shop?category=${esc(c.slug)}"><span>${icon(["shirt", "person-running", "shoe-prints", "bag-shopping", "user-tie", "mitten"][i % 6])}</span><b>${esc(c.name)}</b><small>${esc(c.description || "Shop collection")}</small></a>`).join("") : '<div class="empty wide">Categories will appear here as soon as the store team publishes them.</div>'}</div></section><section class="section products-section"><div class="wrap"><div class="section-head"><div><span class="eyebrow">Selected for you</span><h2>Popular right now</h2></div><a href="/shop">Shop all ${icon("arrow-right")}</a></div><div class="products">${d.products.length ? d.products.map(productCard).join("") : '<div class="empty wide">No products have been published yet. The catalogue is ready for the store team to add real stock.</div>'}</div></div></section><section class="marketing-band"><div class="wrap"><div><span class="eyebrow">Easy ordering</span><h2>One shop. Every school day.</h2><p>Search by school, choose colours and sizes, then order the exact uniform you need.</p></div><a class="btn primary" href="/shop">Explore the catalogue</a></div></section></main>${footer()}${chatWidget()}`;
 }
 
-function chatWidget() { return `<aside class="product-helper" id="product-helper"><button class="helper-toggle" aria-label="Open shopping helper">${icon("comment-dots")}</button><div class="helper-panel"><div><b>Uniform Kings helper</b><button data-close-helper>${icon("xmark")}</button></div><p>Tell me what you are shopping for. I can search the full catalogue.</p><form id="helper-search"><input name="q" placeholder="e.g. black school shoes"><button>${icon("magnifying-glass")}</button></form><div class="helper-results"></div></div></aside>`; }
+function chatWidget() { return `<aside class="product-helper" id="product-helper"><button class="helper-toggle" aria-label="Open shopping helper">${icon("comment-dots")}</button><div class="helper-panel"><div><b>Uniform Kings assistant</b><button data-close-helper>${icon("xmark")}</button></div><p>Hello! Ask me about products, sizes, delivery, exchanges, payments or your order.</p><div class="helper-prompts"><button data-helper-question="How does delivery work?">Delivery</button><button data-helper-question="How do exchanges work?">Exchanges</button><button data-helper-question="How can I pay?">Payments</button></div><form id="helper-search"><input name="q" placeholder="Type your question"><button aria-label="Send question">${icon("paper-plane")}</button></form><div class="helper-results" aria-live="polite"></div></div></aside>`; }
 
 async function product(slug) {
   const p = await request("/products/" + slug); window.__product = p;
   const sizes = [...new Set(p.variants.map((v) => v.size).filter(Boolean))];
   const colours = [...new Set(p.variants.map((v) => v.colour).filter(Boolean))];
+  const description = p.seo_description || p.short_description || `${p.name} from Uniform Kings. Choose available sizes and colours and order online in Kenya.`;
+  const primaryImage = p.images[0]?.image_path ? asset(p.images[0].image_path) : "/logo.jpeg";
+  setSeo({
+    title: `${p.seo_title || `${p.name}${p.school_name ? ` – ${p.school_name}` : ""}`} | Uniform Kings Kenya`,
+    description,
+    path:`/product/${p.slug}`,
+    image:primaryImage,
+    type:"product",
+    schema:{ "@context":"https://schema.org", "@type":"Product", name:p.name, description, image:p.images.map((image) => asset(image.image_path)), sku:p.sku, brand:{"@type":"Brand",name:"Uniform Kings"}, category:p.category_name, color:colours.join(", ") || undefined, size:sizes.join(", ") || undefined, offers:{"@type":"Offer",url:`${SITE_URL}/product/${p.slug}`,priceCurrency:"KES",price:Number(p.price),availability:+p.stock>0?"https://schema.org/InStock":"https://schema.org/OutOfStock",itemCondition:"https://schema.org/NewCondition",seller:{"@type":"Organization",name:"Uniform Kings"}} },
+  });
   return `${header()}<main class="wrap product-page"><div class="crumb">Home / Shop / ${esc(p.name)}</div><div class="product-grid"><div class="gallery"><div class="main-photo">${p.images.length ? `<img id="main-product-image" src="${asset(p.images[0].image_path)}" alt="${esc(p.images[0].alt_text || p.name)}">` : `<span>${icon("shirt")}</span>`}</div><div class="thumbs">${p.images.map((x) => `<button type="button" data-product-image="${asset(x.image_path)}"><img src="${asset(x.image_path)}" alt="${esc(x.alt_text || p.name)}"></button>`).join("")}</div></div><section class="details"><span class="eyebrow">${esc(p.school_name || p.category_name || "Uniform Kings")}</span><h1>${esc(p.name)}</h1><div class="detail-price">${money(p.price)} ${p.compare_price ? `<del>${money(p.compare_price)}</del>` : ""}</div><p>${esc(p.short_description || "A quality uniform item from Uniform Kings.")}</p><form id="variant-add-form"><input name="quantity" type="hidden" value="1">${colours.length ? `<fieldset><legend>Colour <small>Choose one or more</small></legend><div class="option-boxes">${colours.map((colour) => `<button type="button" class="option-box" data-colour="${esc(colour)}">${esc(colour)}</button>`).join("")}</div></fieldset>` : ""}${sizes.length ? `<fieldset><legend>Size <small>Choose one or more</small></legend><div class="option-boxes">${sizes.map((size) => `<button type="button" class="option-box" data-size="${esc(size)}">${esc(size)}</button>`).join("")}</div></fieldset>` : ""}<div class="selected-options">Choose options to add them as separate cart items.</div><div class="buy-row"><input class="quantity-visible" name="quantity-visible" type="number" min="1" max="50" value="1"><button class="btn primary" ${p.variants.some((v) => v.stock > 0) ? "" : "disabled"}>${icon("bag-shopping")} Add selected options</button></div></form><div class="share"><b>Share this product</b><button data-share>${icon("share-nodes")} Share link</button></div><div class="assurances"><div>${icon("truck")}<span><b>Flexible delivery</b><small>Choose an available delivery or pickup method at checkout.</small></span></div><div>${icon("rotate-left")}<span><b>Exchange support</b><small>Contact our team promptly if the size is not right.</small></span></div></div></section></div><section class="description"><h2>Product details</h2><p>${esc(p.description || p.short_description || "More product information will be provided by the store team.")}</p></section></main>${footer()}${chatWidget()}`;
 }
 

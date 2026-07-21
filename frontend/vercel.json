@@ -1,5 +1,7 @@
 {
   "rewrites": [
+    { "source": "/sitemap.xml", "destination": "https://api.uniformkings.co.ke/api/seo/sitemap.xml" },
+    { "source": "/merchant-feed.xml", "destination": "https://api.uniformkings.co.ke/api/seo/merchant-feed.xml" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
