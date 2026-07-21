@@ -1,5 +1,4 @@
 import "@fortawesome/fontawesome-free/css/all.min.css";
-import { Chart } from "chart.js/auto";
 import { request, asset, API } from "./api.js";
 import { getCart, saveCart, addCart, countCart, totalCart } from "./store.js";
 const app = document.querySelector("#app"),
@@ -32,7 +31,8 @@ const app = document.querySelector("#app"),
     render();
   };
 let me = null,
-  config = {};
+  config = {},
+  initialHomeRequest = location.pathname === "/" ? request("/catalog/home") : null;
 try {
   [me, config] = await Promise.all([request("/auth/me"), request("/config")]);
 } catch {}
@@ -164,14 +164,32 @@ async function render() {
     if (path === "/") startHeroSlides();
     if (path === "/admin" && document.querySelector("#sales-chart")) {
       const d = window.__dashboard;
+      const { Chart } = await import("chart.js/auto");
       new Chart(document.querySelector("#sales-chart"), { type: "line", data: { labels: d.sales.map((x) => new Date(x.day).toLocaleDateString("en-KE", { month: "short", day: "numeric" })), datasets: [{ data: d.sales.map((x) => x.total), borderColor: "#c9972d", backgroundColor: "rgba(201,151,45,.12)", fill: true, tension: .35 }] }, options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true }, x: { grid: { display: false } } }, responsive: true, maintainAspectRatio: false } });
     }
   } catch (e) { if (path.startsWith("/admin") && app.querySelector(".admin-shell")) toast("Store data is taking longer to load. Please try again shortly.", "error"); else app.innerHTML = `${header()}<main class="not-found"><h1>We are still loading this page</h1><p>The connection is taking longer than expected.</p><button class="btn primary" onclick="location.reload()">Try again</button></main>${footer()}`; }
 }
 
 document.addEventListener("click", async (event) => {
+  const adminMenu = event.target.closest(".admin-menu");
+  if (adminMenu) {
+    document.body.classList.toggle("admin-menu-open");
+    let scrim = document.querySelector(".admin-scrim");
+    if (!scrim) {
+      scrim = document.createElement("button");
+      scrim.className = "admin-scrim";
+      scrim.setAttribute("aria-label", "Close navigation");
+      document.body.append(scrim);
+    }
+    return;
+  }
+  if (event.target.closest(".admin-scrim")) {
+    document.body.classList.remove("admin-menu-open");
+    event.target.closest(".admin-scrim").remove();
+    return;
+  }
   const link = event.target.closest('a[href^="/"]');
-  if (link && !event.ctrlKey && !event.metaKey) { event.preventDefault(); document.body.classList.remove("menu-open"); go(link.getAttribute("href")); return; }
+  if (link && !event.ctrlKey && !event.metaKey) { event.preventDefault(); document.body.classList.remove("menu-open", "admin-menu-open"); document.querySelector(".admin-scrim")?.remove(); go(link.getAttribute("href")); return; }
   const imageButton = event.target.closest("[data-product-image]");
   if (imageButton) { document.querySelector("#main-product-image").src = imageButton.dataset.productImage; return; }
   const option = event.target.closest(".option-box");
@@ -244,7 +262,7 @@ function productCard(product) {
   const images = String(product.image_paths || product.image_path || "").split("|").filter(Boolean);
   const discount = +product.compare_price > +product.price ? Math.round((1 - +product.price / +product.compare_price) * 100) : 0;
   const saving = discount ? +product.compare_price - +product.price : 0;
-  return `<article class="product-card storefront-card"><a class="product-img" href="/product/${esc(product.slug)}"><div class="card-image-track">${images.length ? images.map((src) => `<img loading="lazy" src="${asset(src)}" alt="${esc(product.name)}">`).join("") : `<span>${icon("shirt")}</span>`}</div>${discount ? `<b class="pill offer-pill">Save ${money(saving)}</b>` : product.is_new ? '<b class="pill">NEW</b>' : ""}</a><div class="product-body"><a class="product-name" href="/product/${esc(product.slug)}">${esc(product.name)}</a><div class="price">${discount ? `<del>${money(product.compare_price)}</del>` : ""}<b>${money(product.price)}</b><a class="card-cart" href="/product/${esc(product.slug)}" aria-label="Choose options for ${esc(product.name)}" title="Choose size and colour">${icon("cart-plus")}</a></div></div></article>`;
+  return `<article class="product-card storefront-card"><a class="product-img" href="/product/${esc(product.slug)}"><div class="card-image-track">${images.length ? images.map((src) => `<img loading="lazy" src="${asset(src)}" alt="${esc(product.name)}">`).join("") : `<span>${icon("shirt")}</span>`}</div>${discount ? `<b class="pill offer-pill">Save ${money(saving)}</b>` : product.is_new ? '<b class="pill">NEW</b>' : ""}</a><div class="product-body"><a class="product-name" href="/product/${esc(product.slug)}">${esc(product.name)}</a><div class="price"><span class="price-values">${discount ? `<del>${money(product.compare_price)}</del>` : ""}<b>${money(product.price)}</b></span><a class="card-cart" href="/product/${esc(product.slug)}" aria-label="Choose options for ${esc(product.name)}" title="Choose size and colour">${icon("cart-plus")}</a></div></div></article>`;
 }
 
 async function adminProducts() {
@@ -275,7 +293,9 @@ async function polishedHome() {
 }
 
 async function managedHome() {
-  const d = await request("/catalog/home"), slides = d.heroImages || [];
+  const homeRequest = initialHomeRequest;
+  initialHomeRequest = null;
+  const d = await (homeRequest || request("/catalog/home")), slides = d.heroImages || [];
   const heroSlides = slides.length ? slides.map((slide, index) => `<div class="hero-slide ${index === 0 ? "show" : ""}"><picture>${slide.mobile_image_path ? `<source media="(max-width: 760px)" srcset="${asset(slide.mobile_image_path)}">` : ""}<img ${index ? 'loading="lazy"' : 'fetchpriority="high"'} src="${asset(slide.image_path)}" alt="${esc(slide.alt_text || "Uniform Kings")}"></picture></div>`).join("") : '<div class="hero-slide show hero-empty"></div>';
   const categorySections = d.categories.map((category) => ({ ...category, products:d.products.filter((product) => +product.category_id === +category.id) })).filter((category) => category.products.length).map((category) => `<section class="home-category"><div class="wrap"><div class="category-row-head"><h2>${esc(category.name)}</h2><a href="/shop?category=${esc(category.slug)}">Shop ${esc(category.name)} ${icon("arrow-right")}</a></div><div class="category-product-grid">${category.products.slice(0,50).map(productCard).join("")}</div></div></section>`).join("");
   return `${header()}<main><section class="landing-hero managed-hero"><div class="hero-slides">${heroSlides}</div><div class="landing-overlay wrap hero-centred"><div class="landing-brand hero-logo-only"><img src="/logo.jpeg" alt="Uniform Kings"></div><h1><i>One reliable uniform shop.</i></h1><p>Quality schoolwear, shoes, sportswear and professional uniforms—easy to find, size and order.</p><div class="hero-buttons"><a class="btn primary" href="/shop">Shop uniforms ${icon("arrow-right")}</a><a class="btn hero-outline" href="/shop">Find your school ${icon("school")}</a></div></div><div class="hero-dots">${slides.slice(0, 5).map((_, index) => `<button aria-label="Show image ${index + 1}" class="${index === 0 ? "active" : ""}" data-hero-dot="${index}"></button>`).join("")}</div></section><section class="mobile-trust wrap"><span>${icon("shield-halved")} Quality</span><span>${icon("truck-fast")} Delivery</span><span>${icon("rotate-left")} Exchanges</span></section><section class="shop-intro wrap"><div><span class="eyebrow">Explore the catalogue</span><h2>Shop every collection</h2><p>Browse our active uniform ranges below. Scroll across each collection to see more.</p></div><a class="btn ghost" href="/shop">View all products</a></section>${categorySections || '<section class="wrap"><div class="empty wide">Products will appear here when active categories are stocked.</div></section>'}</main>${footer()}`;
@@ -496,6 +516,10 @@ async function legacyRender() {
   }
 }
 function bind() {
+  const collectionLabel = document.querySelector(".shop-intro .eyebrow");
+  if (collectionLabel) collectionLabel.textContent = "Explore the collection";
+  const collectionLink = document.querySelector(".shop-intro > a");
+  if (collectionLink) collectionLink.innerHTML = `View all collections ${icon("arrow-right")}`;
   document.querySelectorAll('a[href^="/"]').forEach(
     (a) =>
       (a.onclick = (e) => {

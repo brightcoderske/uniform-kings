@@ -11,3 +11,59 @@
 @media(max-width:760px){.shop-grid>.products{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:9px!important}.shop-grid>.products .storefront-card{width:100%!important;min-width:0!important}.shop-grid>.products .storefront-card .product-img{height:132px!important;min-height:132px!important}.shop-grid>.products .storefront-card .product-body{padding:8px!important}.shop-grid>.products .storefront-card .product-name{max-height:48px!important;font-size:13px!important}.account-products{grid-template-columns:repeat(2,minmax(0,1fr))!important}.account-products .storefront-card{width:100%!important;min-width:0!important}.account-products .storefront-card .product-img{height:132px!important;min-height:132px!important}}
 
 .storefront-card .price{position:relative!important;width:100%!important;align-items:center!important;padding-right:35px!important}.storefront-card .card-cart{position:absolute;right:0;top:50%;display:grid;width:30px;height:30px;place-items:center;border-radius:50%;background:#082a65;color:#fff;box-shadow:0 5px 13px rgba(8,42,101,.24);transform:translateY(-50%);transition:background .18s ease,transform .18s ease}.storefront-card .card-cart:hover{background:#c9972d;color:#071a3d;transform:translateY(-50%) scale(1.06)}.storefront-card .card-cart i{font-size:12px}@media(max-width:760px){.storefront-card .price{padding-right:30px!important;gap:5px!important}.storefront-card .card-cart{width:27px;height:27px}.storefront-card .card-cart i{font-size:10px}}
+
+/* Compact commerce layout: fixed card scale, clear prices and swipe affordance. */
+.storefront-card .price{display:grid!important;grid-template-columns:minmax(0,1fr) 30px!important;gap:6px!important;padding-right:0!important}
+.storefront-card .price-values{display:flex;min-width:0;align-items:baseline;gap:7px;flex-wrap:wrap}
+.storefront-card .price-values b{white-space:nowrap}
+.storefront-card .card-cart{position:static!important;transform:none!important;align-self:center}
+.storefront-card .card-cart:hover{transform:scale(1.06)!important}
+
+@media(max-width:760px){
+  .home-category{padding:6px 0 12px!important}
+  .category-row-head{padding-inline:1px;margin-bottom:3px!important}
+  .category-row-head h2{font-size:15px!important}
+  .category-row-head>a{font-size:10px!important;white-space:nowrap}
+  .category-product-grid,.shop-grid>.products,.account-products{
+    display:grid!important;
+    grid-template-columns:none!important;
+    grid-template-rows:1fr!important;
+    grid-auto-flow:column!important;
+    grid-auto-columns:calc((100vw - 44px)/2.25)!important;
+    gap:8px!important;
+    overflow-x:auto!important;
+    overscroll-behavior-inline:contain;
+    scroll-snap-type:x proximity;
+    scrollbar-width:none;
+    padding:4px 14px 15px 0!important;
+    justify-content:start!important;
+  }
+  .category-product-grid::-webkit-scrollbar,.shop-grid>.products::-webkit-scrollbar,.account-products::-webkit-scrollbar{display:none}
+  .category-product-grid .storefront-card,.shop-grid>.products .storefront-card,.account-products .storefront-card{
+    width:100%!important;
+    min-width:0!important;
+    border-radius:13px!important;
+    scroll-snap-align:start;
+  }
+  .category-product-grid .storefront-card .product-img,.shop-grid>.products .storefront-card .product-img,.account-products .storefront-card .product-img{
+    width:100%!important;
+    height:auto!important;
+    min-height:0!important;
+    aspect-ratio:1/1!important;
+  }
+  .category-product-grid .storefront-card .product-body,.shop-grid>.products .storefront-card .product-body,.account-products .storefront-card .product-body{padding:7px 8px 9px!important}
+  .category-product-grid .storefront-card .product-name,.shop-grid>.products .storefront-card .product-name,.account-products .storefront-card .product-name{
+    min-height:31px!important;
+    max-height:44px!important;
+    margin-bottom:4px!important;
+    font-size:11.5px!important;
+    line-height:1.28!important;
+    -webkit-line-clamp:2;
+  }
+  .storefront-card .price{grid-template-columns:minmax(0,1fr) 25px!important;gap:3px!important;min-height:25px!important}
+  .storefront-card .price-values{display:grid;gap:0;line-height:1.05}
+  .storefront-card .price-values b{font-size:12.5px!important}
+  .storefront-card .price-values del{font-size:8.5px!important}
+  .storefront-card .card-cart{width:25px!important;height:25px!important}
+  .storefront-card .pill{top:6px!important;left:6px!important;padding:4px 6px!important;font-size:7px!important}
+}

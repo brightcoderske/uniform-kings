@@ -7,6 +7,8 @@ backend/uploads/*
 !backend/uploads/.gitkeep
 npm-debug.log*
 .vercel/
+hostafrica-import.sql
+hostafrica-uploads.zip
 docs/
 tmp/
 plans/
