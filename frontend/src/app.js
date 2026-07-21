@@ -199,6 +199,7 @@ async function render() {
       new Chart(document.querySelector("#sales-chart"), { type: "line", data: { labels: d.sales.map((x) => new Date(x.day).toLocaleDateString("en-KE", { month: "short", day: "numeric" })), datasets: [{ data: d.sales.map((x) => x.total), borderColor: "#c9972d", backgroundColor: "rgba(201,151,45,.12)", fill: true, tension: .35 }] }, options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true }, x: { grid: { display: false } } }, responsive: true, maintainAspectRatio: false } });
     }
   } catch (e) { if (path.startsWith("/admin") && app.querySelector(".admin-shell")) toast("Store data is taking longer to load. Please try again shortly.", "error"); else app.innerHTML = `${header()}<main class="not-found"><h1>We are still loading this page</h1><p>The connection is taking longer than expected.</p><button class="btn primary" onclick="location.reload()">Try again</button></main>${footer()}`; }
+  if(location.pathname==="/admin/walkins"&&window.__walkinProducts){const list=document.querySelector(".pos-product-list");if(list&&!document.querySelector("[data-pos-search]")){list.insertAdjacentHTML("beforebegin",`<label class="pos-search">${icon("magnifying-glass")}<input data-pos-search placeholder="Search product, category or school" autocomplete="off"><small data-pos-count>${window.__walkinProducts.length} available products</small></label>`);list.querySelectorAll("[data-pos-product]").forEach((button,index)=>{const product=window.__walkinProducts[index];button.dataset.searchText=[product.name,product.category_name,product.school_name].filter(Boolean).join(" ").toLowerCase();button.insertAdjacentHTML("afterbegin",product.image_path?`<img src="${asset(product.image_path)}" alt="${esc(product.name)}">`:`<span class="pos-product-placeholder">${icon("shirt")}</span>`);});}}
 }
 
 document.addEventListener("click", async (event) => {
@@ -904,6 +905,7 @@ async function product(slug) {
 async function adminWalkins() {
   const products = await request("/admin/products");
   const available = products.filter((p) => +p.stock > 0);
+  window.__walkinProducts=available;
   window.__posCart = [];
   return `<div class="admin-shell">${adminSide("walkins")}<main>${adminTop("Walk-in sale")}<div class="admin-content"><div class="admin-heading"><div><h1>Walk-in sale</h1><p>Create an in-store sale and print a professional receipt immediately.</p></div><a class="btn ghost" href="/admin/orders">View orders</a></div><div class="pos-layout"><section class="data-card pos-products"><div class="data-head"><div><h3>Sell from live stock</h3><small>Select an item, then select its size and colour.</small></div></div><div class="pos-product-list">${available.length ? available.map((p) => `<button type="button" class="pos-product" data-pos-product="${p.id}" data-pos-slug="${esc(p.slug)}"><b>${esc(p.name)}</b><span>${money(p.price)} · ${p.stock} in stock</span></button>`).join("") : '<div class="empty">No active stock available.</div>'}</div></section><section class="data-card pos-cart"><div class="data-head"><div><h3>Current sale</h3><small>Items are deducted only when you complete the sale.</small></div></div><form id="walkin-form"><div id="walkin-items" class="walkin-items"><div class="empty">Choose a product from the left.</div></div><div class="form-grid"><label>Customer name <small>Optional</small><input name="customer_name" placeholder="Walk-in customer"></label><label>Phone <small>Optional</small><input name="phone" placeholder="0712 345 678"></label><label>Payment method<select name="payment_method"><option>Cash</option><option>M-Pesa</option><option>Card</option><option>Bank transfer</option></select></label></div><div class="pos-total"><span>Total</span><b id="walkin-total">${money(0)}</b></div><button class="btn primary" id="complete-walkin" disabled>Complete sale & print receipt</button></form></section></div></div></main></div>`;
 }
@@ -1045,6 +1047,8 @@ document.addEventListener("submit", async (event) => {
 }, true);
 
 document.addEventListener("submit",(event)=>{const form=event.target;if(!form.matches("[data-admin-product-filter]"))return;event.preventDefault();const params=new URLSearchParams(new FormData(form));for(const [key,value] of [...params])if(!value)params.delete(key);go(`/admin/products${params.size?`?${params}`:""}`);},true);
+
+document.addEventListener("input",(event)=>{if(!event.target.matches("[data-pos-search]"))return;const query=event.target.value.trim().toLowerCase();let visible=0;document.querySelectorAll("[data-pos-product]").forEach((button)=>{const show=!query||button.dataset.searchText.includes(query);button.hidden=!show;if(show)visible++;});const count=document.querySelector("[data-pos-count]");if(count)count.textContent=`${visible} matching product${visible===1?"":"s"}`;});
 
 document.addEventListener("submit", async (event) => {
   const form = event.target;
