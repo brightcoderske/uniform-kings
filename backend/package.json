@@ -9,6 +9,9 @@
     "start": "node app.cjs",
     "deploy:hostafrica": "bash scripts/deploy-hostafrica.sh",
     "db:init": "node scripts/init-db.js",
+    "db:migrate-catalog": "node scripts/migrate-catalog.js",
+    "catalog:import": "node scripts/import-catalog.js",
+    "catalog:build-launch": "node scripts/build-launch-catalog.js",
     "check": "node --check src/server.js"
   },
   "dependencies": {

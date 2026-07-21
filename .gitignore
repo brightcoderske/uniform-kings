@@ -9,6 +9,8 @@ npm-debug.log*
 .vercel/
 hostafrica-import.sql
 hostafrica-uploads.zip
+catalog-import*.local.json
+catalog-research.local.json
 docs/
 tmp/
 plans/

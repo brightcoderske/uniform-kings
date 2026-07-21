@@ -64,10 +64,14 @@ async function legacyHome() {
 }
 async function shop() {
   const sp = new URLSearchParams(location.search),
-    [products, filters] = await Promise.all([
-      request("/products?" + sp),
+    [catalog, filters] = await Promise.all([
+      request("/products?" + new URLSearchParams([...sp, ["paged","1"], ["per_page","25"]])),
       request("/filters"),
     ]);
+  const products=catalog.items || [], page=catalog.page || 1;
+  const pageLink=(next)=>{const params=new URLSearchParams(sp);params.set("page",next);return `/shop?${params}`;};
+  const pagination=catalog.pages>1 ? `<nav class="catalog-pagination" aria-label="Product pages"><span>Showing ${(page-1)*catalog.per_page+1}–${Math.min(page*catalog.per_page,catalog.total)} of ${catalog.total}</span><div>${page>1?`<a href="${pageLink(page-1)}">${icon("arrow-left")} Previous</a>`:""}<b>Page ${page} of ${catalog.pages}</b>${page<catalog.pages?`<a href="${pageLink(page+1)}">Next ${icon("arrow-right")}</a>`:""}</div></nav>` : `<div class="catalog-count">Showing ${catalog.total} product${catalog.total===1?"":"s"}</div>`;
+  window.__catalogPage={ total:catalog.total, html:pagination };
   const offersOnly = sp.get("offer") === "1";
   const selectedCategory = filters.categories.find((item) => item.slug === sp.get("category"));
   const shopHeading = offersOnly ? "Uniform Offers in Kenya" : selectedCategory ? `${selectedCategory.name} in Kenya` : "School Uniforms, Shoes & Workwear in Kenya";
@@ -95,7 +99,13 @@ async function checkout() {
 
 async function adminCategories() {
   const data = await request("/admin/categories");
-  return `<div class="admin-shell">${adminSide("categories")}<main>${adminTop("Categories")}<div class="admin-content"><div class="admin-heading"><div><h1>Categories</h1><p>Control the departments customers browse.</p></div></div><form class="quick-form" data-admin-form="category"><input name="name" placeholder="Category name" required><input name="description" placeholder="Short description"><button class="btn primary">${icon("plus")} Add category</button></form>${adminTable("All categories", data.map((c) => ({...c, sku:"",category_name:c.description || "",price:0,stock:"",school_name:""})), "products")}</div></main></div>`;
+  window.__adminCategories=data;
+  return `<div class="admin-shell">${adminSide("categories")}<main>${adminTop("Categories")}<div class="admin-content"><div class="admin-heading"><div><h1>Categories</h1><p>Create, organise and edit the collections customers browse.</p></div></div><form class="data-card category-editor category-add" data-admin-form="category"><div class="form-grid"><label>Category name<input name="name" required></label><label>Display order<input name="sort_order" type="number" value="0"></label><label class="full">Description<textarea name="description"></textarea></label></div><button class="btn primary">${icon("plus")} Add category</button></form><section class="data-card"><div class="data-head"><div><h3>Shop categories</h3><small>${data.length} categor${data.length===1?"y":"ies"}</small></div></div><div class="table-wrap"><table><thead><tr><th>Category</th><th>Description</th><th>Order</th><th>Visibility</th><th></th></tr></thead><tbody>${data.length?data.map((c)=>`<tr><td><b>${esc(c.name)}</b><small>/${esc(c.slug)}</small></td><td>${esc(c.description || "—")}</td><td>${c.sort_order || 0}</td><td><span class="status ${c.is_active?"active":""}">${c.is_active?"Visible":"Hidden"}</span></td><td><button class="table-edit" type="button" data-edit-category="${c.id}">${icon("pen")} Edit</button></td></tr>`).join(""):'<tr><td colspan="5"><div class="empty">No categories yet.</div></td></tr>'}</tbody></table></div></section><div class="catalog-modal" data-category-modal hidden><button type="button" class="modal-backdrop" data-close-category aria-label="Close"></button><form class="data-card category-editor" data-category-edit=""><div class="category-editor-head"><b>Edit category</b><button type="button" data-close-category aria-label="Close">${icon("xmark")}</button></div><div class="form-grid"><label>Name<input name="name" required></label><label>URL slug<input name="slug"></label><label>Display order<input name="sort_order" type="number"></label><label><input name="is_active" type="checkbox"> Visible in shop</label><label class="full">Description<textarea name="description"></textarea></label><label class="full">SEO title<input name="seo_title" maxlength="190"></label><label class="full">SEO description<textarea name="seo_description" maxlength="300"></textarea></label></div><button class="btn primary">Save category</button></form></div></div></main></div>`;
+}
+
+function productMetadataFields(product = {}) {
+  const selected = (value, expected) => String(value || "").toLowerCase() === expected ? "selected" : "";
+  return `<label>Brand<input name="brand" value="${esc(product.brand || "Uniform Kings")}" maxlength="120"></label><label>Product type<input name="product_type" value="${esc(product.product_type || "")}" placeholder="e.g. School shoes"></label><label>Gender<select name="gender"><option value="">Not specified</option><option ${selected(product.gender,"unisex")}>Unisex</option><option ${selected(product.gender,"boys")}>Boys</option><option ${selected(product.gender,"girls")}>Girls</option><option ${selected(product.gender,"men")}>Men</option><option ${selected(product.gender,"women")}>Women</option></select></label><label>Age group<select name="age_group"><option value="">Not specified</option><option ${selected(product.age_group,"kids")}>Kids</option><option ${selected(product.age_group,"teen")}>Teen</option><option ${selected(product.age_group,"adult")}>Adult</option><option ${selected(product.age_group,"all ages")}>All ages</option></select></label><label>Material<input name="material" value="${esc(product.material || "")}" placeholder="e.g. Cotton blend"></label><label>Google product category<input name="google_product_category" value="${esc(product.google_product_category || "")}" placeholder="e.g. Apparel & Accessories > Clothing"></label><label class="full">Research/source URL <small>Internal reference only</small><input name="source_url" type="url" value="${esc(product.source_url || "")}"></label>`;
 }
 
 async function adminSchools() {
@@ -104,6 +114,7 @@ async function adminSchools() {
 }
 
 async function adminProductNew() {
+  window.__editingProduct = null;
   const filters = await request("/filters");
   return `<div class="admin-shell">${adminSide("products")}<main>${adminTop("Add product")}<div class="admin-content"><div class="admin-heading"><div><h1>Add product</h1><p>Use comma-separated sizes and colours. Stock is shared by the whole product.</p></div><a class="btn ghost" href="/admin/products">Cancel</a></div><form id="better-product-form" class="data-card product-form"><div class="form-grid"><label>Product name<input name="name" required maxlength="190"></label><label>Category<select name="category_id"><option value="">General catalogue</option>${filters.categories.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join("")}</select></label><label>School (optional)<select name="school_id"><option value="">Not school-specific</option>${filters.schools.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join("")}</select></label><label>Price (KES)<input name="price" type="number" min="0" step="0.01" required></label><label>Previous price (optional)<input name="compare_price" type="number" min="0" step="0.01"></label><label>Sizes <small>Separate with commas</small><input name="sizes" placeholder="e.g. 38, 39, 40, 41"></label><label>Colours <small>Separate with commas</small><input name="colours" placeholder="e.g. Black, Brown, Navy"></label><label>Total product stock<input name="stock" type="number" min="0" value="0" required></label><label>Product images <small>Select up to 16 images</small><input name="images" type="file" multiple accept="image/jpeg,image/png,image/webp,image/avif"></label><label class="full">Short description<textarea name="short_description" maxlength="300"></textarea></label><label class="full">Full description<textarea name="description"></textarea></label><label>Status<select name="status"><option value="active">Active</option><option value="draft">Draft</option></select></label><label><input name="is_featured" type="checkbox"> Feature on homepage</label><label><input name="is_new" type="checkbox"> Mark as new</label></div><div class="form-actions"><button class="btn primary">Save product and options</button></div></form></div></main></div>`;
 }
@@ -261,6 +272,25 @@ function enhanceInputs() {
     input.parentNode.insertBefore(wrap, input); wrap.appendChild(input);
     const button = document.createElement("button"); button.type = "button"; button.className = "password-toggle"; button.setAttribute("aria-label", "Show password"); button.innerHTML = icon("eye"); wrap.appendChild(button);
   });
+  document.querySelectorAll("#better-product-form .form-grid, #edit-product-form .form-grid").forEach((grid) => {
+    if (grid.querySelector('[name="gender"]')) return;
+    const anchor = grid.querySelector('[name="school_id"]')?.closest("label");
+    if (!anchor) return;
+    anchor.insertAdjacentHTML("afterend", productMetadataFields(window.__editingProduct || {}));
+  });
+  if (document.querySelector(".shop-page") && window.__catalogPage) {
+    const count=document.querySelector(".shop-title p"); if(count)count.textContent=`${window.__catalogPage.total} product${window.__catalogPage.total===1?"":"s"} available`;
+    const grid=document.querySelector(".shop-grid"); if(grid&&!grid.nextElementSibling?.matches(".catalog-pagination,.catalog-count"))grid.insertAdjacentHTML("afterend",window.__catalogPage.html);
+  }
+  const gallery=document.querySelector(".product-page .gallery");
+  if(gallery&&window.__product?.images?.some((image)=>image.license_name||image.credit_text)){
+    gallery.insertAdjacentHTML("beforeend",`<details class="image-credits"><summary>Image credits</summary>${window.__product.images.filter((image)=>image.license_name||image.credit_text).map((image)=>`<p>${esc(image.credit_text||"Image contributor")} · ${esc(image.license_name||"Licensed image")}${image.source_url?` · <a href="${esc(image.source_url)}" target="_blank" rel="noopener">Source</a>`:""}</p>`).join("")}</details>`);
+  }
+  const categoryButtons=[...document.querySelectorAll("[data-edit-category]")];
+  categoryButtons.forEach((button)=>{const row=button.closest("tr");row.draggable=true;row.dataset.categoryRow=button.dataset.editCategory;row.title="Drag to change display order";});
+  if(categoryButtons.length){const guide=categoryButtons[0].closest(".data-card")?.querySelector(".data-head small");if(guide)guide.textContent+=window.matchMedia("(pointer: coarse)").matches?" · Edit the order number to reorder":" · Drag rows to reorder";}
+  if(location.pathname==="/admin/products"&&window.__adminProducts){document.querySelectorAll(".admin-content tbody tr").forEach((row,index)=>{const product=window.__adminProducts[index],cell=row.querySelector("td");if(!product||!cell||cell.querySelector(".admin-product-thumb"))return;cell.insertAdjacentHTML("afterbegin",product.image_path?`<img class="admin-product-thumb" src="${asset(product.image_path)}" alt="${esc(product.name)}">`:`<span class="admin-product-thumb empty-thumb">${icon("shirt")}</span>`);});}
+  if(location.pathname==="/admin/products"&&window.__adminProductPage){const {catalog,filters,sp}=window.__adminProductPage,section=document.querySelector(".admin-content .data-card"),small=section?.querySelector(".data-head small");if(small)small.textContent=`${catalog.total} product${catalog.total===1?"":"s"} · showing ${catalog.items.length}`;section?.querySelector(".data-head>label")?.remove();if(section&&!document.querySelector("[data-admin-product-filter]")){section.insertAdjacentHTML("beforebegin",`<form class="admin-product-filters" data-admin-product-filter><label>${icon("magnifying-glass")}<input name="q" value="${esc(sp.get("q")||"")}" placeholder="Search product, category or school"></label><select name="category"><option value="">All categories</option>${filters.categories.map((category)=>`<option value="${esc(category.slug)}" ${sp.get("category")===category.slug?"selected":""}>${esc(category.name)}</option>`).join("")}</select><select name="status"><option value="">All statuses</option>${["active","draft","archived"].map((status)=>`<option value="${status}" ${sp.get("status")===status?"selected":""}>${status[0].toUpperCase()+status.slice(1)}</option>`).join("")}</select><button class="btn primary">Filter</button><a href="/admin/products">Clear</a></form>`);const link=(page)=>{const params=new URLSearchParams(sp);params.set("page",page);return `/admin/products?${params}`;};section.insertAdjacentHTML("afterend",`<nav class="catalog-pagination"><span>Showing ${catalog.total?((catalog.page-1)*catalog.per_page)+1:0}–${Math.min(catalog.page*catalog.per_page,catalog.total)} of ${catalog.total}</span><div>${catalog.page>1?`<a href="${link(catalog.page-1)}">${icon("arrow-left")} Previous</a>`:""}<b>Page ${catalog.page} of ${catalog.pages}</b>${catalog.page<catalog.pages?`<a href="${link(catalog.page+1)}">Next ${icon("arrow-right")}</a>`:""}</div></nav>`);}}
 }
 
 document.addEventListener("click", async (event) => {
@@ -288,7 +318,11 @@ function productCard(product) {
 }
 
 async function adminProducts() {
-  const products = await request("/admin/products");
+  const sp=new URLSearchParams(location.search);
+  const [catalog,filters]=await Promise.all([request("/admin/products?"+new URLSearchParams([...sp,["paged","1"]])),request("/filters")]);
+  const products=catalog.items || [];
+  window.__adminProducts=products;
+  window.__adminProductPage={catalog,filters,sp};
   return `<div class="admin-shell">${adminSide("products")}<main>${adminTop("Products")}<div class="admin-content"><div class="admin-heading"><div><h1>Products</h1><p>Manage products, images, prices, categories and stock options.</p></div><a class="btn primary" href="/admin/products/new">${icon("plus")} Add product</a></div><section class="data-card"><div class="data-head"><div><h3>Product catalogue</h3><small>${products.length} product${products.length === 1 ? "" : "s"}</small></div><label>${icon("magnifying-glass")}<input data-table-search placeholder="Search products"></label></div><div class="table-wrap"><table><thead><tr><th>Product</th><th>Category</th><th>Price</th><th>Stock</th><th>Status</th><th></th></tr></thead><tbody>${products.length ? products.map((p) => `<tr><td><b>${esc(p.name)}</b><small>${esc(p.school_name || "General catalogue")}</small></td><td>${esc(p.category_name || "—")}</td><td>${money(p.price)}</td><td><b>${p.stock}</b></td><td><span class="status ${p.status}">${esc(p.status)}</span></td><td><a class="table-edit" href="/admin/products/${p.id}/edit">${icon("pen")} Edit</a></td></tr>`).join("") : '<tr><td colspan="6"><div class="empty">No products yet.</div></td></tr>'}</tbody></table></div></section></div></main></div>`;
 }
 
@@ -297,6 +331,7 @@ async function adminProductEdit(id) {
   const p = products.find((product) => +product.id === +id);
   if (!p) throw new Error("Product not found.");
   const detail = await request(`/admin/products/${p.id}`);
+  window.__editingProduct = detail;
   const sizes = [...new Set(detail.variants.map((v) => v.size).filter(Boolean))].join(", ");
   const colours = [...new Set(detail.variants.map((v) => v.colour).filter(Boolean))].join(", ");
   const images = detail.images.map((image) => `<img src="${asset(image.image_path)}" alt="${esc(image.alt_text || p.name)}">`).join("");
@@ -861,7 +896,7 @@ async function product(slug) {
     path:`/product/${p.slug}`,
     image:primaryImage,
     type:"product",
-    schema:{ "@context":"https://schema.org", "@type":"Product", name:p.name, description, image:p.images.map((image) => asset(image.image_path)), sku:p.sku, brand:{"@type":"Brand",name:"Uniform Kings"}, category:p.category_name, color:colours.join(", ") || undefined, size:sizes.join(", ") || undefined, offers:{"@type":"Offer",url:`${SITE_URL}/product/${p.slug}`,priceCurrency:"KES",price:Number(p.price),availability:+p.stock>0?"https://schema.org/InStock":"https://schema.org/OutOfStock",itemCondition:"https://schema.org/NewCondition",seller:{"@type":"Organization",name:"Uniform Kings"}} },
+    schema:{ "@context":"https://schema.org", "@type":"Product", name:p.name, description, image:p.images.map((image) => asset(image.image_path)), sku:p.sku, brand:{"@type":"Brand",name:p.brand || "Uniform Kings"}, category:p.product_type || p.category_name, material:p.material || undefined, audience:(p.gender || p.age_group) ? {"@type":"PeopleAudience",suggestedGender:p.gender || undefined,suggestedMinAge:p.age_group === "adult" ? 18 : undefined} : undefined, color:colours.join(", ") || undefined, size:sizes.join(", ") || undefined, offers:{"@type":"Offer",url:`${SITE_URL}/product/${p.slug}`,priceCurrency:"KES",price:Number(p.price),availability:+p.stock>0?"https://schema.org/InStock":"https://schema.org/OutOfStock",itemCondition:"https://schema.org/NewCondition",seller:{"@type":"Organization",name:"Uniform Kings"}} },
   });
   return `${header()}<main class="wrap product-page"><div class="crumb">Home / Shop / ${esc(p.name)}</div><div class="product-grid"><div class="gallery"><div class="main-photo">${p.images.length ? `<img id="main-product-image" src="${asset(p.images[0].image_path)}" alt="${esc(p.images[0].alt_text || p.name)}">` : `<span>${icon("shirt")}</span>`}</div><div class="thumbs">${p.images.map((x) => `<button type="button" data-product-image="${asset(x.image_path)}"><img src="${asset(x.image_path)}" alt="${esc(x.alt_text || p.name)}"></button>`).join("")}</div></div><section class="details"><span class="eyebrow">${esc(p.school_name || p.category_name || "Uniform Kings")}</span><h1>${esc(p.name)}</h1><div class="detail-price">${money(p.price)} ${p.compare_price ? `<del>${money(p.compare_price)}</del>` : ""}</div><p>${esc(p.short_description || "A quality uniform item from Uniform Kings.")}</p><form id="variant-add-form"><input name="quantity" type="hidden" value="1">${colours.length ? `<fieldset><legend>Colour <small>Choose one or more</small></legend><div class="option-boxes">${colours.map((colour) => `<button type="button" class="option-box" data-colour="${esc(colour)}">${esc(colour)}</button>`).join("")}</div></fieldset>` : ""}${sizes.length ? `<fieldset><legend>Size <small>Choose one or more</small></legend><div class="option-boxes">${sizes.map((size) => `<button type="button" class="option-box" data-size="${esc(size)}">${esc(size)}</button>`).join("")}</div></fieldset>` : ""}<div class="selected-options">Choose options to add them as separate cart items.</div><div class="buy-row"><input class="quantity-visible" name="quantity-visible" type="number" min="1" max="50" value="1"><button class="btn primary" ${p.variants.some((v) => v.stock > 0) ? "" : "disabled"}>${icon("bag-shopping")} Add selected options</button></div></form><div class="share"><b>Share this product</b><button data-share>${icon("share-nodes")} Share link</button></div><div class="assurances"><div>${icon("truck")}<span><b>Flexible delivery</b><small>Choose an available delivery or pickup method at checkout.</small></span></div><div>${icon("rotate-left")}<span><b>Exchange support</b><small>Contact our team promptly if the size is not right.</small></span></div></div></section></div><section class="description"><h2>Product details</h2><p>${esc(p.description || p.short_description || "More product information will be provided by the store team.")}</p></section></main>${footer()}${chatWidget()}`;
 }
@@ -935,6 +970,16 @@ document.addEventListener("click", async (event) => {
   if (remove) { window.__posCart.splice(+remove.dataset.posRemove,1); renderPosCart(); }
 });
 
+let draggedCategoryRow=null;
+document.addEventListener("dragstart",(event)=>{const row=event.target.closest("[data-category-row]");if(!row)return;draggedCategoryRow=row;row.classList.add("dragging");event.dataTransfer.effectAllowed="move";});
+document.addEventListener("dragover",(event)=>{const row=event.target.closest("[data-category-row]");if(!row||!draggedCategoryRow||row===draggedCategoryRow)return;event.preventDefault();const box=row.getBoundingClientRect();row.parentElement.insertBefore(draggedCategoryRow,event.clientY<box.top+box.height/2?row:row.nextSibling);});
+document.addEventListener("dragend",async()=>{
+  if(!draggedCategoryRow)return;draggedCategoryRow.classList.remove("dragging");draggedCategoryRow=null;
+  const ordered=[...document.querySelectorAll("[data-category-row]")];
+  try{await Promise.all(ordered.map((row,index)=>{const category=(window.__adminCategories||[]).find((item)=>+item.id===+row.dataset.categoryRow);if(!category)return Promise.resolve();category.sort_order=(index+1)*10;return request(`/admin/categories/${category.id}`,{method:"PATCH",body:JSON.stringify({...category,is_active:!!category.is_active})});}));toast("Category order saved.");}
+  catch(error){toast(error.message,"error");render();}
+});
+
 document.addEventListener("submit", async (event) => {
   if (event.target.id !== "walkin-form") return;
   event.preventDefault(); const form=event.target, button=form.querySelector("#complete-walkin"); button.disabled=true; button.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i> Completing sale…';
@@ -964,6 +1009,42 @@ document.addEventListener("submit", async (event) => {
     toast("All product details saved."); go("/admin/products");
   } catch (error) { toast(error.message,"error"); button.disabled=false; button.textContent="Save all changes"; }
 });
+
+document.addEventListener("submit", async (event) => {
+  const form = event.target;
+  if (!form.matches("form[data-category-edit]")) return;
+  event.preventDefault(); event.stopImmediatePropagation();
+  const button=form.querySelector("button"), body=Object.fromEntries(new FormData(form));
+  body.is_active=form.querySelector('[name="is_active"]').checked; button.disabled=true; button.innerHTML=`${icon("spinner")} Saving…`;
+  try { await request(`/admin/categories/${form.dataset.categoryEdit}`,{method:"PATCH",body:JSON.stringify(body)}); toast("Category saved."); render(); }
+  catch(error){ toast(error.message,"error"); button.disabled=false; button.textContent="Save category"; }
+}, true);
+
+document.addEventListener("click", (event) => {
+  const modal=document.querySelector("[data-category-modal]");
+  const edit=event.target.closest("[data-edit-category]");
+  if(edit&&modal){const category=(window.__adminCategories||[]).find((item)=>+item.id===+edit.dataset.editCategory),form=modal.querySelector("form");if(!category)return;form.dataset.categoryEdit=category.id;["name","slug","sort_order","description","seo_title","seo_description"].forEach((name)=>{form.elements[name].value=category[name]??"";});form.elements.is_active.checked=!!category.is_active;modal.hidden=false;document.body.classList.add("modal-open");return;}
+  if(event.target.closest("[data-close-category]")&&modal){modal.hidden=true;document.body.classList.remove("modal-open");}
+});
+
+document.addEventListener("submit", async (event) => {
+  const form=event.target;
+  if(form.id!=="better-product-form")return;
+  event.preventDefault(); event.stopImmediatePropagation();
+  const fd=new FormData(form), button=form.querySelector("button"); button.disabled=true; button.innerHTML=`${icon("spinner")} Saving…`;
+  try {
+    const body=Object.fromEntries(fd); body.is_featured=fd.has("is_featured"); body.is_new=fd.has("is_new"); delete body.images; delete body.sizes; delete body.colours;
+    const saved=await request("/admin/products",{method:"POST",body:JSON.stringify(body)});
+    const values=(name)=>[...new Set(String(fd.get(name)||"").split(",").map((value)=>value.trim()).filter(Boolean))];
+    const sizes=values("sizes"), colours=values("colours"), variants=(sizes.length?sizes:[""]).flatMap((size)=>(colours.length?colours:[""]).map((colour)=>({size,colour})));
+    await request(`/admin/products/${saved.id}/variants`,{method:"POST",body:JSON.stringify({variants})});
+    const images=new FormData(); [...fd.getAll("images")].filter((file)=>file.size).forEach((file)=>images.append("images",file)); images.append("alt_text",fd.get("name"));
+    if([...images.keys()].some((key)=>key==="images"))await request(`/admin/products/${saved.id}/images`,{method:"POST",body:images});
+    toast("Product and options created."); go("/admin/products");
+  } catch(error){toast(error.message,"error");button.disabled=false;button.textContent="Save product and options";}
+}, true);
+
+document.addEventListener("submit",(event)=>{const form=event.target;if(!form.matches("[data-admin-product-filter]"))return;event.preventDefault();const params=new URLSearchParams(new FormData(form));for(const [key,value] of [...params])if(!value)params.delete(key);go(`/admin/products${params.size?`?${params}`:""}`);},true);
 
 document.addEventListener("submit", async (event) => {
   const form = event.target;

@@ -1,0 +1,12 @@
+{
+  "categories": [
+    {"name":"School Uniforms","slug":"school-uniforms","description":"Shirts, blouses, dresses, skirts, trousers, sweaters, cardigans and blazers for school.","seo_title":"School Uniforms in Kenya | Uniform Kings","seo_description":"Shop school shirts, blouses, skirts, trousers, sweaters, dresses and blazers in Kenya.","sort_order":10,"is_active":true},
+    {"name":"Sports & PE Wear","slug":"sports-pe-wear","description":"Tracksuits, PE kits, jerseys, shorts, sports socks and training wear.","seo_title":"School Sportswear & PE Kits Kenya | Uniform Kings","seo_description":"Shop tracksuits, PE uniforms, jerseys, shorts and school sportswear in Kenya.","sort_order":20,"is_active":true},
+    {"name":"Footwear & Shoe Care","slug":"footwear-shoe-care","description":"School shoes, sports shoes, sandals, shoe polish, brushes, laces and insoles.","seo_title":"School Shoes & Shoe Care Kenya | Uniform Kings","seo_description":"Shop school shoes, sports shoes, shoe polish, brushes, laces and footwear accessories.","sort_order":30,"is_active":true},
+    {"name":"Bags & School Essentials","slug":"bags-school-essentials","description":"School bags, lunch bags, pencil pouches, water bottles and everyday learning essentials.","seo_title":"School Bags, Bottles & Pencil Cases Kenya","seo_description":"Shop school bags, lunch bags, water bottles, pencil pouches and school essentials.","sort_order":40,"is_active":true},
+    {"name":"Uniform Accessories","slug":"uniform-accessories","description":"Socks, ties, belts, handkerchiefs, badges and practical sewing accessories.","seo_title":"School Uniform Accessories Kenya | Uniform Kings","seo_description":"Shop school socks, ties, belts, handkerchiefs, badges and sewing accessories.","sort_order":50,"is_active":true},
+    {"name":"Bedding & Nightwear","slug":"bedding-nightwear","description":"School bedsheets, blankets, pillowcases, towels and comfortable pyjamas.","seo_title":"School Bedding & Nightwear Kenya | Uniform Kings","seo_description":"Shop school bedsheets, blankets, pillowcases, towels and pyjamas in Kenya.","sort_order":60,"is_active":true},
+    {"name":"Professional & Healthcare Wear","slug":"professional-healthcare-wear","description":"Nursing scrubs, lab coats, medical tunics, corporate uniforms and protective workwear.","seo_title":"Nursing Scrubs & Professional Uniforms Kenya","seo_description":"Shop nursing scrubs, lab coats, medical tunics, corporate uniforms and workwear in Kenya.","sort_order":70,"is_active":true}
+  ],
+  "products": []
+}

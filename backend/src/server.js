@@ -204,6 +204,14 @@ app.get("/api/products", async (req, res, next) => {
       p.push(school);
     }
     if (offer) w.push(`p.compare_price IS NOT NULL AND p.compare_price>p.price`);
+    const paged = String(req.query.paged || "") === "1";
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const perPage = Math.min(50, Math.max(1, Number.parseInt(req.query.per_page, 10) || 25));
+    if (paged) {
+      const count = await one(`SELECT COUNT(*) total FROM products p LEFT JOIN categories c ON c.id=p.category_id LEFT JOIN schools s ON s.id=p.school_id WHERE ${w.join(" AND ")}`, p);
+      const items = await rows(`SELECT p.*,i.image_path,(SELECT GROUP_CONCAT(image_path ORDER BY sort_order,id SEPARATOR '|') FROM product_images WHERE product_id=p.id) image_paths,c.name category_name,s.name school_name FROM products p LEFT JOIN product_images i ON i.id=(SELECT MIN(id) FROM product_images WHERE product_id=p.id) LEFT JOIN categories c ON c.id=p.category_id LEFT JOIN schools s ON s.id=p.school_id WHERE ${w.join(" AND ")} ORDER BY p.is_featured DESC,p.created_at DESC LIMIT ? OFFSET ?`, [...p, perPage, (page-1)*perPage]);
+      return ok(res, { items, total:Number(count.total), page, per_page:perPage, pages:Math.max(1,Math.ceil(Number(count.total)/perPage)) });
+    }
     ok(
       res,
       await rows(
@@ -454,10 +462,18 @@ app.get("/api/admin/dashboard", staff, async (req, res, next) => {
 });
 app.get("/api/admin/products", staff, async (req, res, next) => {
   try {
+    const paged=String(req.query.paged||"")==="1",page=Math.max(1,Number.parseInt(req.query.page,10)||1),perPage=25;
+    const q=String(req.query.q||"").trim(),category=String(req.query.category||"").trim(),status=String(req.query.status||"").trim();
+    const where=[],params=[];
+    if(q){where.push("(p.name LIKE ? OR p.short_description LIKE ? OR c.name LIKE ? OR s.name LIKE ?)");params.push(...Array(4).fill(`%${q}%`));}
+    if(category){where.push("c.slug=?");params.push(category);}
+    if(["draft","active","archived"].includes(status)){where.push("p.status=?");params.push(status);}
+    const clause=where.length?`WHERE ${where.join(" AND ")}`:"";
+    if(paged){const count=await one(`SELECT COUNT(*) total FROM products p LEFT JOIN categories c ON c.id=p.category_id LEFT JOIN schools s ON s.id=p.school_id ${clause}`,params);const items=await rows(`SELECT p.*,c.name category_name,s.name school_name,(SELECT image_path FROM product_images WHERE product_id=p.id ORDER BY sort_order,id LIMIT 1) image_path FROM products p LEFT JOIN categories c ON c.id=p.category_id LEFT JOIN schools s ON s.id=p.school_id ${clause} ORDER BY p.updated_at DESC LIMIT ? OFFSET ?`,[...params,perPage,(page-1)*perPage]);return ok(res,{items,total:Number(count.total),page,per_page:perPage,pages:Math.max(1,Math.ceil(Number(count.total)/perPage))});}
     ok(
       res,
       await rows(
-        `SELECT p.*,c.name category_name,s.name school_name FROM products p LEFT JOIN categories c ON c.id=p.category_id LEFT JOIN schools s ON s.id=p.school_id ORDER BY p.updated_at DESC`,
+        `SELECT p.*,c.name category_name,s.name school_name,(SELECT image_path FROM product_images WHERE product_id=p.id ORDER BY sort_order,id LIMIT 1) image_path FROM products p LEFT JOIN categories c ON c.id=p.category_id LEFT JOIN schools s ON s.id=p.school_id ORDER BY p.updated_at DESC`,
       ),
     );
   } catch (e) {
@@ -480,12 +496,12 @@ app.post("/api/admin/categories", staff, async (req, res, next) => {
   try {
     const b = req.body, name = String(b.name || "");
     if (name.length < 2) return res.status(422).json({ error: "Enter a category name." });
-    const result = await rows(`INSERT INTO categories(name,slug,description,is_active,sort_order) VALUES(?,?,?,?,?)`, [name, slugify(b.slug || name), b.description || null, b.is_active === false ? 0 : 1, +b.sort_order || 0]);
+    const result = await rows(`INSERT INTO categories(name,slug,description,seo_title,seo_description,is_active,sort_order) VALUES(?,?,?,?,?,?,?)`, [name, slugify(b.slug || name), b.description || null, b.seo_title || null, b.seo_description || null, b.is_active === false ? 0 : 1, +b.sort_order || 0]);
     ok(res, { id: result.insertId });
   } catch (e) { next(e); }
 });
 app.patch("/api/admin/categories/:id", staff, async (req, res, next) => {
-  try { const b=req.body; await rows(`UPDATE categories SET name=?,slug=?,description=?,is_active=?,sort_order=? WHERE id=?`, [b.name,slugify(b.slug||b.name),b.description||null,b.is_active?1:0,+b.sort_order||0,+req.params.id]); ok(res,true); } catch(e){next(e);}
+  try { const b=req.body; if(String(b.name||"").trim().length<2)return res.status(422).json({error:"Enter a category name."}); await rows(`UPDATE categories SET name=?,slug=?,description=?,seo_title=?,seo_description=?,is_active=?,sort_order=? WHERE id=?`, [b.name,slugify(b.slug||b.name),b.description||null,b.seo_title||null,b.seo_description||null,b.is_active?1:0,+b.sort_order||0,+req.params.id]); ok(res,true); } catch(e){next(e);}
 });
 app.get("/api/admin/schools", staff, async (req, res, next) => {
   try { ok(res, await rows(`SELECT * FROM schools ORDER BY name`)); } catch (e) { next(e); }
@@ -505,13 +521,20 @@ app.post("/api/admin/products", staff, async (req, res, next) => {
   try {
     const b = req.body,
       r = await rows(
-        `INSERT INTO products(category_id,school_id,name,slug,sku,short_description,description,price,compare_price,stock,status,is_featured,is_new,seo_title,seo_description) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO products(category_id,school_id,name,slug,sku,brand,product_type,gender,age_group,material,google_product_category,source_url,short_description,description,price,compare_price,stock,status,is_featured,is_new,seo_title,seo_description) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [
           b.category_id || null,
           b.school_id || null,
           b.name,
           slugify(b.slug || b.name),
           b.sku || `UK-${nanoid(10).toUpperCase()}`,
+          b.brand || null,
+          b.product_type || null,
+          b.gender || null,
+          b.age_group || null,
+          b.material || null,
+          b.google_product_category || null,
+          b.source_url || null,
           b.short_description || null,
           b.description || null,
           +b.price || 0,
@@ -533,7 +556,7 @@ app.patch("/api/admin/products/:id", staff, async (req, res, next) => {
   try {
     const b = req.body;
     if (String(b.name || "").trim().length < 2) return res.status(422).json({ error: "A product name is required." });
-    await rows(`UPDATE products SET category_id=?,school_id=?,name=?,slug=?,short_description=?,description=?,price=?,compare_price=?,stock=?,status=?,is_featured=?,is_new=?,seo_title=?,seo_description=? WHERE id=?`, [b.category_id||null,b.school_id||null,b.name,slugify(b.slug||b.name),b.short_description||null,b.description||null,+b.price||0,+b.compare_price||null,Math.max(0,+b.stock||0),b.status||"draft",b.is_featured?1:0,b.is_new?1:0,b.seo_title||null,b.seo_description||null,+req.params.id]);
+    await rows(`UPDATE products SET category_id=?,school_id=?,name=?,slug=?,brand=?,product_type=?,gender=?,age_group=?,material=?,google_product_category=?,source_url=?,short_description=?,description=?,price=?,compare_price=?,stock=?,status=?,is_featured=?,is_new=?,seo_title=?,seo_description=? WHERE id=?`, [b.category_id||null,b.school_id||null,b.name,slugify(b.slug||b.name),b.brand||null,b.product_type||null,b.gender||null,b.age_group||null,b.material||null,b.google_product_category||null,b.source_url||null,b.short_description||null,b.description||null,+b.price||0,+b.compare_price||null,Math.max(0,+b.stock||0),b.status||"draft",b.is_featured?1:0,b.is_new?1:0,b.seo_title||null,b.seo_description||null,+req.params.id]);
     ok(res, true);
   } catch (e) { next(e); }
 });
@@ -788,8 +811,8 @@ app.get("/api/seo/merchant-feed.xml", async (_req, res, next) => {
     const website = String(process.env.FRONTEND_URL || "https://uniformkings.co.ke").split(",")[0].replace(/\/$/, "");
     const api = String(process.env.API_URL || "https://api.uniformkings.co.ke").replace(/\/$/, "");
     const xml = (value) => String(value ?? "").replace(/[<>&'\"]/g, (character) => ({ "<":"&lt;", ">":"&gt;", "&":"&amp;", "'":"&apos;", '\"':"&quot;" })[character]);
-    const products = await rows(`SELECT p.id,p.name,p.slug,p.short_description,p.description,p.price,p.stock,p.sku,c.name category_name,i.image_path FROM products p LEFT JOIN categories c ON c.id=p.category_id LEFT JOIN product_images i ON i.id=(SELECT MIN(id) FROM product_images WHERE product_id=p.id) WHERE p.status='active' AND i.image_path IS NOT NULL ORDER BY p.updated_at DESC`);
-    res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0"><channel><title>Uniform Kings Kenya</title><link>${xml(website)}</link><description>School uniforms, shoes, sportswear and professional uniforms in Kenya.</description>${products.map((product) => `<item><g:id>${xml(product.sku || product.id)}</g:id><g:title>${xml(product.name)}</g:title><g:description>${xml(product.short_description || product.description || `${product.name} from Uniform Kings Kenya.`)}</g:description><g:link>${xml(`${website}/product/${product.slug}`)}</g:link><g:image_link>${xml(`${api}${product.image_path}`)}</g:image_link><g:availability>${+product.stock > 0 ? "in_stock" : "out_of_stock"}</g:availability><g:price>${Number(product.price).toFixed(2)} KES</g:price><g:condition>new</g:condition><g:brand>Uniform Kings</g:brand><g:product_type>${xml(product.category_name || "Uniforms")}</g:product_type></item>`).join("")}</channel></rss>`);
+    const products = await rows(`SELECT p.id,p.name,p.slug,p.short_description,p.description,p.price,p.stock,p.sku,p.brand,p.product_type,CASE LOWER(p.gender) WHEN 'boys' THEN 'male' WHEN 'men' THEN 'male' WHEN 'girls' THEN 'female' WHEN 'women' THEN 'female' WHEN 'unisex' THEN 'unisex' ELSE NULL END gender,CASE LOWER(p.age_group) WHEN 'adult' THEN 'adult' WHEN 'kids' THEN 'kids' WHEN 'teen' THEN 'kids' ELSE NULL END age_group,p.material,p.google_product_category,c.name category_name,i.image_path FROM products p LEFT JOIN categories c ON c.id=p.category_id LEFT JOIN product_images i ON i.id=(SELECT MIN(id) FROM product_images WHERE product_id=p.id) WHERE p.status='active' AND i.image_path IS NOT NULL ORDER BY p.updated_at DESC`);
+    res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0"><channel><title>Uniform Kings Kenya</title><link>${xml(website)}</link><description>School uniforms, shoes, sportswear and professional uniforms in Kenya.</description>${products.map((product) => `<item><g:id>${xml(product.sku || product.id)}</g:id><g:title>${xml(product.name)}</g:title><g:description>${xml(product.short_description || product.description || `${product.name} from Uniform Kings Kenya.`)}</g:description><g:link>${xml(`${website}/product/${product.slug}`)}</g:link><g:image_link>${xml(`${api}${product.image_path}`)}</g:image_link><g:availability>${+product.stock > 0 ? "in_stock" : "out_of_stock"}</g:availability><g:price>${Number(product.price).toFixed(2)} KES</g:price><g:condition>new</g:condition><g:brand>${xml(product.brand || "Uniform Kings")}</g:brand><g:product_type>${xml(product.product_type || product.category_name || "Uniforms")}</g:product_type>${product.google_product_category ? `<g:google_product_category>${xml(product.google_product_category)}</g:google_product_category>` : ""}${product.gender ? `<g:gender>${xml(product.gender)}</g:gender>` : ""}${product.age_group ? `<g:age_group>${xml(product.age_group)}</g:age_group>` : ""}${product.material ? `<g:material>${xml(product.material)}</g:material>` : ""}</item>`).join("")}</channel></rss>`);
   } catch (error) { next(error); }
 });
 
